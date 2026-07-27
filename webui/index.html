@@ -1,4 +1,5 @@
 <head>
+  <meta charset="UTF-8" />
   <script src="{elements}" type="module"></script>
   <script src="{konva}"></script>
   <script src="{main}"></script>
@@ -6,36 +7,64 @@
   <link rel="stylesheet" href="{codicon}" id="vscode-codicon-stylesheet">
 </head>
 
-<!-- https://vscode-elements.github.io/guides/getting-started/ -->
-
-<body style="padding: 0em;">
-  <div>
-    <!-- The reason the tabs are seperate is because -->
-    <!-- we don't want multiple canvases -->
-    <vscode-tabs id="recordFormatTabs" selected-index="0" fixed-pane="start">
-    </vscode-tabs>
-
-
-    <div style="display: flex; height: 100vh;">
-      <!-- Left Sidebar -->
-      <div style="width: 20%; background-color: var(--vscode-sideBar-background);">
-        <div id="recordFormatSidebar">
-        </div>
-        <div id="keywordEditorArea">
-        </div>
+<body style="padding: 0; margin: 0;">
+  <div id="connectionBanner" class="connection-banner" hidden>
+    IBM i connection lost — editing is disabled until you reconnect.
+  </div>
+  <div class="toolbar">
+    <div class="toolbar-start">
+      <div class="view-switch" role="tablist" aria-label="Editor view">
+        <button type="button" class="view-switch-btn active" role="tab" aria-selected="true" disabled>
+          Design
+        </button>
+        <button type="button" id="showSourceBtn" class="view-switch-btn" role="tab" aria-selected="false">
+          Source
+        </button>
       </div>
+      <div id="recordFormatTabs" class="format-tabs" role="tablist" aria-label="Record formats"></div>
+    </div>
+    <div class="toolbar-actions">
+      <span id="cursorBadge" class="badge"></span>
+      <span id="modeBadge" class="badge">Design</span>
+      <select id="screenSizeSelect" title="Screen size">
+        <option value="auto">Size: Auto (DDS)</option>
+        <option value="ds3">24 × 80 (*DS3)</option>
+        <option value="ds4">27 × 132 (*DS4)</option>
+      </select>
+      <vscode-button id="modeToggle" secondary>Design / Preview</vscode-button>
+    </div>
+  </div>
 
-      <!-- Main Content -->
-      <div style="flex: 1; display: flex; justify-content: center; margin-top: 3em;">
-        <div id="container"></div>
+  <div class="layout">
+    <aside id="leftSidebar" class="sidebar left" aria-label="Format tools">
+      <div class="sidebar-header">
+        <span class="sidebar-header-title">Format</span>
+        <button type="button" id="collapseLeftSidebar" class="sidebar-collapse-btn" title="Minimize left panel" aria-label="Minimize left panel">
+          ◀
+        </button>
       </div>
+      <div id="recordFormatSidebar" class="sidebar-body"></div>
+    </aside>
+    <button type="button" id="expandLeftSidebar" class="sidebar-rail left" title="Show format tools" aria-label="Show format tools" hidden>
+      ▶
+    </button>
 
-      <!-- Right Sidebar -->
-      <div style="width: 20%; background-color: var(--vscode-sideBar-background);">
-        <div id="fieldInfoSidebar">
-        </div>
+    <div class="canvas-wrap">
+      <div id="container"></div>
+    </div>
+
+    <button type="button" id="expandRightSidebar" class="sidebar-rail right" title="Show field tools" aria-label="Show field tools" hidden>
+      ◀
+    </button>
+    <aside id="rightSidebar" class="sidebar right" aria-label="Field tools">
+      <div class="sidebar-header">
+        <button type="button" id="collapseRightSidebar" class="sidebar-collapse-btn" title="Minimize right panel" aria-label="Minimize right panel">
+          ▶
+        </button>
+        <span class="sidebar-header-title">Fields</span>
       </div>
-    </div></div>
-
+      <div id="keywordEditorArea" class="keyword-editor-area"></div>
+      <div id="fieldInfoSidebar" class="sidebar-body"></div>
+    </aside>
   </div>
 </body>

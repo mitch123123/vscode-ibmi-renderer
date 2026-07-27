@@ -1,6 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { DdsLineRange, DisplayFile, FieldInfo } from "../ui/dspf";
-import exp from "constants";
+import { DdsLineRange, DisplayFile, FieldInfo, splitDocumentLines } from "../ui/dspf";
 
 describe('DisplayFile tests', () => {
 
@@ -8,16 +7,16 @@ describe('DisplayFile tests', () => {
     `     A                                      DSPSIZ(24 80 *DS3)                  `,
     `     A          R HEAD                                                          `,
     `     A                                  1 32'vscode-displayfile'                `,
-    `     A          R FMT1                                                          `,     
+    `     A          R FMT1                                                          `,
     `     A                                      SLNO(03)                            `,
     `     A                                  1  3'Opt'                               `,
     `     A                                      COLOR(BLU)                          `,
     `     A                                  1  8'Name'                              `,
     `     A                                      COLOR(BLU)                          `,
-    `     A          R GLOBAL                                                        `,     
+    `     A          R GLOBAL                                                        `,
     `     A                                      SLNO(04)                            `,
     `     A                                  1  3'---'                               `,
-    `     A          R FORM1                                                         `,     
+    `     A          R FORM1                                                         `,
     `     A                                      SLNO(06)                            `,
     `     A            FLD0101       10A  B  3  5                                    `,
     `     A  20                                  DSPATR(PR)                          `,
@@ -30,7 +29,7 @@ describe('DisplayFile tests', () => {
     dds.parse(dspf1);
 
     expect(dds.getHeaderRangeForFormat(`DONOTEXIST`)).toBeUndefined();
-    
+
     let range: DdsLineRange | undefined;
 
     range = dds.getHeaderRangeForFormat(`FMT1`);
@@ -137,4 +136,370 @@ describe('DisplayFile tests', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('preserves comments when updating a field (round-trip)', () => {
+    const withComments: string[] = [
+      `     A* File-level comment`,
+      `     A                                      DSPSIZ(24 80 *DS3)`,
+      `     A          R FORM1`,
+      `     A* Before field`,
+      `     A            FLD001        10A  O  2  5`,
+      `     A                                      COLOR(GRN)`,
+      `     A* Between fields`,
+      `     A            FLD002        5A   B  3  5`,
+      `     A* Trailing comment`,
+    ];
+
+    const dds = new DisplayFile();
+    dds.parse(withComments);
+
+    const form = dds.formats.find(f => f.name === `FORM1`);
+    expect(form).toBeDefined();
+    expect(form!.passthroughLines.length).toBeGreaterThan(0);
+
+    const fld001 = form!.fields.find(f => f.name === `FLD001`)!;
+    fld001.position.x = 10;
+    fld001.keywords = [{ name: `COLOR`, value: `YLW`, conditions: [] }];
+
+    const update = dds.updateField(`FORM1`, `FLD001`, fld001);
+    expect(update?.range).toBeDefined();
+
+    // Field range must not swallow the "Between fields" comment
+    const between = withComments.findIndex(l => l.includes(`Between fields`));
+    expect(update!.range!.end).toBeLessThan(between);
+
+    const newLines = dds.applyUpdateToLines(withComments, update!);
+
+    // Unrelated comment lines must be byte-identical
+    expect(newLines.find(l => l.includes(`File-level comment`))).toBe(withComments[0]);
+    expect(newLines.find(l => l.includes(`Before field`))).toBe(withComments[3]);
+    expect(newLines.find(l => l.includes(`Between fields`))).toBe(withComments[6]);
+    expect(newLines.find(l => l.includes(`Trailing comment`))).toBe(withComments[8]);
+
+    // FLD002 untouched
+    expect(newLines.some(l => l.includes(`FLD002`))).toBe(true);
+  });
+
+  it('parses reference fields (type R / REFFLD)', () => {
+    const lines: string[] = [
+      `     A          R FORM1`,
+      `     A            CUSTNAME    R        O  2  5`,
+      `     A                                      REFFLD(NAME CUSTFILE)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form = dds.formats.find(f => f.name === `FORM1`);
+    const field = form?.fields.find(f => f.name === `CUSTNAME`);
+    expect(field).toBeDefined();
+    expect(field?.isReference).toBe(true);
+    expect(field?.reference).toBe(`NAME CUSTFILE`);
+  });
+
+  it('parses printer-style X-only positions', () => {
+    const lines: string[] = [
+      `     A          R DETAIL`,
+      `     A                                 10'Header'`,
+      `     A            AMT           7  2     25`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form = dds.formats.find(f => f.name === `DETAIL`);
+    expect(form).toBeDefined();
+    expect(form!.fields.length).toBeGreaterThanOrEqual(1);
+    const amt = form!.fields.find(f => f.name === `AMT`);
+    expect(amt).toBeDefined();
+    expect(amt!.position.x).toBe(25);
+    expect(amt!.position.y).toBe(0);
+  });
+
+  it('preserves blank field type (never emits A 0)', () => {
+    const dds = new DisplayFile();
+    dds.parse(dspf1);
+    const form1 = dds.formats.find(f => f.name === `FORM1`)!;
+    const fld = form1.fields.find(f => f.name === `FLD0102`)!;
+    expect(fld.type).toBeUndefined();
+
+    fld.position.x = 8;
+    const lines = DisplayFile.getLinesForField(fld);
+    expect(lines[0]).toMatch(/10   B/);
+    expect(lines[0]).not.toMatch(/10A/);
+    expect(lines[0]).not.toMatch(/A 0B/);
+  });
+
+  it('parses and emits IBM-aligned N20 / zero-padded indicators', () => {
+    const ibmLine = `     AN20                                  DSPATR(PR)`;
+    const conds = DisplayFile.parseConditionals(ibmLine.substring(6, 16));
+    expect(conds).toEqual([{ indicator: 20, negate: true }]);
+
+    const emitted = DisplayFile.getLinesForKeyword({
+      name: `DSPATR`,
+      value: `PR`,
+      conditions: [{ indicator: 5, negate: false }],
+    });
+    expect(emitted[0]).toContain(` 05`);
+    // cols 8-16 live after `     A ` (index 7)
+    expect(emitted[0].substring(7, 16)).toBe(` 05      `);
+  });
+
+  it('preserves mid-span comments inside a field on update', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD001        10A  O  2  5`,
+      `     A* keep me`,
+      `     A                                      COLOR(GRN)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `FLD001`)!;
+    fld.keywords = [{ name: `COLOR`, value: `BLU`, conditions: [] }];
+    const update = dds.updateField(`FORM1`, `FLD001`, fld)!;
+    const next = dds.applyUpdateToLines(lines, update);
+    const keepIdx = next.findIndex(l => l.includes(`keep me`));
+    const defIdx = next.findIndex(l => l.includes(`FLD001`));
+    const colorIdx = next.findIndex(l => l.includes(`COLOR(BLU)`));
+    expect(keepIdx).toBeGreaterThan(defIdx);
+    expect(colorIdx).toBeGreaterThan(keepIdx);
+    expect(next.filter(l => l.includes(`keep me`)).length).toBe(1);
+  });
+
+  it('emits negated N20 indicator in IBM columns', () => {
+    const emitted = DisplayFile.getLinesForKeyword({
+      name: `DSPATR`,
+      value: `PR`,
+      conditions: [{ indicator: 20, negate: true }],
+    });
+    expect(emitted[0].substring(7, 16)).toBe(`N20      `);
+  });
+
+  it('emits field condition continuation lines beyond 3 indicators', () => {
+    const field = new FieldInfo(0, `FLD1`);
+    field.displayType = `both`;
+    field.type = `A`;
+    field.length = 5;
+    field.position = { x: 1, y: 1 };
+    field.conditions = [
+      { indicator: 1, negate: false },
+      { indicator: 2, negate: false },
+      { indicator: 3, negate: false },
+      { indicator: 4, negate: false },
+    ];
+    const lines = DisplayFile.getLinesForField(field);
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toMatch(/^     A  04/);
+  });
+
+  it('empty format header update includes keyword lines', () => {
+    const lines = [
+      `     A          R CTL01`,
+      `     A                                      SFLCTL(SFL01)`,
+      `     A                                      SFLPAG(5)`,
+      `     A          R SFL01`,
+      `     A            COL1          5A  O  1  2`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const range = dds.getHeaderRangeForFormat(`CTL01`);
+    expect(range?.endHeader).toBe(2);
+
+    const update = dds.updateFormatHeader(`CTL01`, [
+      { name: `SFLCTL`, value: `SFL01`, conditions: [] },
+      { name: `SFLPAG`, value: `10`, conditions: [] },
+    ])!;
+    expect(update.range!.end).toBe(2);
+    expect(update.newLines.length).toBe(3);
+    const next = dds.applyUpdateToLines(lines, update);
+    expect(next.filter(l => l.includes(`SFLCTL`)).length).toBe(1);
+    expect(next.some(l => l.includes(`SFLPAG(10)`))).toBe(true);
+  });
+
+  it('file-level _GLOBAL keywords can be updated', () => {
+    const lines = [
+      `     A                                      DSPSIZ(24 80 *DS3)`,
+      `     A                                      INDARA`,
+      `     A          R HEAD`,
+      `     A                                  1  2'Hi'`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+
+    const range = dds.getHeaderRangeForFormat(`_GLOBAL`);
+    expect(range).toBeDefined();
+    expect(range!.start).toBe(0);
+    expect(range!.endHeader).toBe(1);
+
+    const update = dds.updateFormatHeader(`_GLOBAL`, [
+      { name: `DSPSIZ`, value: `*DS4`, conditions: [] },
+      { name: `PRINT`, conditions: [] },
+    ])!;
+    expect(update.range!.start).toBe(0);
+    expect(update.range!.end).toBe(1);
+    expect(update.newLines.some(l => l.includes(`DSPSIZ(*DS4)`))).toBe(true);
+    expect(update.newLines.some(l => l.includes(`PRINT`))).toBe(true);
+    expect(update.newLines.every(l => !l.includes(` R `))).toBe(true);
+
+    // Insert path when no file keywords yet
+    const bare = [
+      `     A          R HEAD`,
+      `     A                                  1  2'Hi'`,
+    ];
+    const dds2 = new DisplayFile();
+    dds2.parse(bare);
+    const insertRange = dds2.getHeaderRangeForFormat(`_GLOBAL`);
+    expect(insertRange!.start).toBe(0);
+    expect(insertRange!.endHeader).toBe(-1);
+    const insert = dds2.updateFormatHeader(`_GLOBAL`, [
+      { name: `DSPSIZ`, value: `24 80 *DS3`, conditions: [] },
+    ])!;
+    expect(insert.range!.end).toBeLessThan(insert.range!.start);
+    expect(insert.newLines.some(l => l.includes(`DSPSIZ`))).toBe(true);
+  });
+
+  it('insertFormats appends standard and subfile pairs', () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A                                  1  2'Hi'`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+
+    expect(DisplayFile.isValidRecordName(`REC01`)).toBe(true);
+    expect(DisplayFile.isValidRecordName(`1BAD`)).toBe(false);
+    expect(dds.insertFormats([{ name: `HEAD`, keywords: [] }])).toBeUndefined();
+
+    const std = dds.insertFormats([
+      { name: `BODY`, keywords: [{ name: `OVERLAY`, conditions: [] }] },
+    ])!;
+    expect(std.range!.start).toBe(2);
+    expect(std.newLines[0]).toContain(`R BODY`);
+    expect(std.newLines.some(l => l.includes(`OVERLAY`))).toBe(true);
+
+    const pair = dds.insertFormats([
+      { name: `SFL01`, keywords: [{ name: `SFL`, conditions: [] }] },
+      {
+        name: `CTL01`,
+        keywords: [
+          { name: `SFLCTL`, value: `SFL01`, conditions: [] },
+          { name: `SFLPAG`, value: `10`, conditions: [] },
+        ],
+      },
+    ])!;
+    expect(pair.newLines.some(l => l.includes(`R SFL01`))).toBe(true);
+    expect(pair.newLines.some(l => l.includes(`R CTL01`))).toBe(true);
+    expect(pair.newLines.some(l => l.includes(`SFLCTL(SFL01)`))).toBe(true);
+
+    const next = dds.applyUpdateToLines(lines, pair);
+    expect(next.length).toBeGreaterThan(lines.length);
+    const reparse = new DisplayFile();
+    reparse.parse(next);
+    expect(reparse.formats.some(f => f.name === `SFL01`)).toBe(true);
+    expect(reparse.formats.some(f => f.name === `CTL01`)).toBe(true);
+  });
+
+  it('renameFormat deleteFormat copyFormat manage records', () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A                                  1  2'Hi'`,
+      `     A          R SFL01`,
+      `     A                                      SFL`,
+      `     A            F1             5A  O  1  2`,
+      `     A          R CTL01`,
+      `     A                                      SFLCTL(SFL01)`,
+      `     A                                      SFLPAG(5)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+
+    const renamed = dds.renameFormat(`SFL01`, `SFL99`)!;
+    expect(renamed.newLines.some(l => /R\s+SFL99/.test(l))).toBe(true);
+    expect(renamed.newLines.some(l => l.includes(`SFLCTL(SFL99)`))).toBe(true);
+    expect(renamed.newLines.some(l => l.includes(`SFLCTL(SFL01)`))).toBe(false);
+
+    const dds2 = new DisplayFile();
+    dds2.parse(lines);
+    const copied = dds2.copyFormat(`HEAD`, `HEAD2`)!;
+    expect(copied.newLines[0]).toMatch(/R\s+HEAD2/);
+    const afterCopy = dds2.applyUpdateToLines(lines, copied);
+    expect(afterCopy.some(l => /R\s+HEAD2/.test(l))).toBe(true);
+
+    const dds3 = new DisplayFile();
+    dds3.parse(lines);
+    const del = dds3.deleteFormat(`HEAD`)!;
+    expect(del.newLines).toEqual([]);
+    expect(del.range!.start).toBe(0);
+    const afterDel = dds3.applyUpdateToLines(lines, del);
+    expect(afterDel.some(l => /R\s+HEAD\b/.test(l))).toBe(false);
+    expect(afterDel.some(l => /R\s+SFL01/.test(l))).toBe(true);
+  });
+
+  it('updateField with unknown name does not insert', () => {
+    const dds = new DisplayFile();
+    dds.parse(dspf1);
+    const field = new FieldInfo(0, `GHOST`);
+    field.displayType = `both`;
+    field.type = `A`;
+    field.length = 5;
+    field.position = { x: 1, y: 1 };
+    expect(dds.updateField(`FORM1`, `GHOST`, field)).toBeUndefined();
+  });
+
+  it('splitDocumentLines drops trailing empty from final EOL', () => {
+    const lines = splitDocumentLines(`A\nB\n`);
+    expect(lines).toEqual([`A`, `B`]);
+    expect(splitDocumentLines(`A\nB`)).toEqual([`A`, `B`]);
+  });
+
+  it('applyUpdateToLines inserts new field without replacing next R', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD1          5A  O  1  2`,
+      `     A          R FORM2`,
+      `     A            FLD2          5A  O  1  2`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form1 = dds.formats.find(f => f.name === `FORM1`)!;
+    const newField = new FieldInfo(0, `NEW1`);
+    newField.displayType = `both`;
+    newField.type = `A`;
+    newField.length = 3;
+    newField.position = { x: 1, y: 2 };
+    const update = dds.updateField(`FORM1`, undefined, newField)!;
+    expect(update.range!.start).toBe(form1.range.end);
+    const next = dds.applyUpdateToLines(lines, update);
+    expect(next.filter(l => l.includes(`R FORM2`)).length).toBe(1);
+    expect(next.some(l => l.includes(`NEW1`))).toBe(true);
+  });
+
+  it('printer +n as first field does not throw', () => {
+    // y blank (cols 39-41), x = +5 (cols 42-44)
+    const fieldLine = `${`     A`.padEnd(38)}   +5 'Hi'`;
+    const lines = [
+      `     A          R DETAIL`,
+      fieldLine,
+    ];
+    const dds = new DisplayFile();
+    expect(() => dds.parse(lines)).not.toThrow();
+    const form = dds.formats.find(f => f.name === `DETAIL`);
+    expect(form!.fields.length).toBeGreaterThanOrEqual(1);
+    expect(form!.fields[0].position.x).toBe(5);
+  });
+
+  it('updates display type, length, and data type on a named field', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD001         5A  I  2  5`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `FLD001`)!;
+    expect(fld.displayType).toBe(`input`);
+
+    fld.displayType = `both`;
+    fld.type = `S`;
+    fld.length = 7;
+    fld.decimals = 2;
+    const update = dds.updateField(`FORM1`, `FLD001`, fld)!;
+    const next = dds.applyUpdateToLines(lines, update);
+    const def = next.find(l => l.includes(`FLD001`))!;
+    expect(def).toMatch(/FLD001\s+7S 2B/);
+  });
 });

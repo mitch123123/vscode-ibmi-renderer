@@ -1,0 +1,22 @@
+     A* Sample DSPF for IBM i Display File Designer
+     A                                      DSPSIZ(24 80 *DS3)
+     A          R HEADER
+     A                                  1  2'IBM i Display File Designer'
+     A                                      COLOR(WHT)
+     A                                  1 60DATE
+     A                                      DATFMT(*ISO)
+     A          R BODY
+     A                                      OVERLAY
+     A                                  3  2'Customer. . .'
+     A            CUSTNO        7A  B  3 16
+     A                                      COLOR(YLW)
+     A  50                                  DSPATR(PR)
+     A                                  4  2'Name . . . . .'
+     A            NAME         30A  B  4 16
+     A                                  5  2'Amount . . . .'
+     A            AMOUNT        9  2B  5 16
+     A                                      EDTCDE(J)
+     A          R FOOTER
+     A                                      OVERLAY
+     A                                 23  2'F3=Exit  F12=Cancel'
+     A                                      COLOR(BLU)

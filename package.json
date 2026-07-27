@@ -1,32 +1,152 @@
 {
   "name": "vscode-ibmi-renderer",
-  "displayName": "vscode-ibmi-renderer",
-  "description": "IBM i Renderer 2",
+  "displayName": "IBM i Display File Designer",
+  "description": "Visual designer for IBM i display and printer files (DDS)",
   "version": "0.0.1",
+  "publisher": "halcyontechltd",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codefori/vscode-ibmi-renderer"
+  },
   "engines": {
     "vscode": "^1.97.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "ibmi",
+    "ibm i",
+    "dds",
+    "dspf",
+    "prtf",
+    "display file",
+    "as400",
+    "iseries"
   ],
   "activationEvents": [
-    "onLanguage:dds.dspf"
+    "onLanguage:dds.dspf",
+    "onLanguage:dds.prtf",
+    "onCustomEditor:ibmi.dspfDesigner"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "ibmi.dspfDesigner",
+        "displayName": "IBM i Display File Designer",
+        "selector": [
+          {
+            "filenamePattern": "*.dspf"
+          },
+          {
+            "filenamePattern": "*.prtf"
+          },
+          {
+            "filenamePattern": "*.DSPF"
+          },
+          {
+            "filenamePattern": "*.PRTF"
+          },
+          {
+            "filenamePattern": "*.dspf38"
+          },
+          {
+            "filenamePattern": "*.prtf38"
+          },
+          {
+            "filenamePattern": "*.DSPF38"
+          },
+          {
+            "filenamePattern": "*.PRTF38"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "vscode-ibmi-renderer.launchRenderer",
-        "title": "Launch Renderer",
-        "icon": "$(search)"
+        "title": "Edit / Preview",
+        "category": "IBM i",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vscode-ibmi-renderer.showSource",
+        "title": "Show DDS Source",
+        "category": "IBM i",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "vscode-ibmi-renderer.toggleEditorView",
+        "title": "Toggle Design / Source View",
+        "category": "IBM i",
+        "icon": "$(arrow-swap)"
       }
     ],
     "menus": {
       "editor/title": [
         {
           "command": "vscode-ibmi-renderer.launchRenderer",
-          "when": "editorLangId == dds.dspf",
-          "group": "navigation"
+          "when": "activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
+          "group": "navigation@0"
+        },
+        {
+          "command": "vscode-ibmi-renderer.showSource",
+          "when": "activeCustomEditorId == ibmi.dspfDesigner",
+          "group": "navigation@0"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vscode-ibmi-renderer.launchRenderer",
+          "when": "activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
+          "group": "navigation@0"
+        },
+        {
+          "command": "vscode-ibmi-renderer.showSource",
+          "when": "activeCustomEditorId == ibmi.dspfDesigner",
+          "group": "navigation@0"
+        },
+        {
+          "command": "vscode-ibmi-renderer.toggleEditorView",
+          "when": "activeCustomEditorId == ibmi.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
+          "group": "navigation@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "vscode-ibmi-renderer.launchRenderer",
+          "when": "resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
+          "group": "navigation@0"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vscode-ibmi-renderer.launchRenderer",
+          "when": "view == objectBrowser && viewItem == member",
+          "group": "displayfile@0"
+        },
+        {
+          "command": "vscode-ibmi-renderer.launchRenderer",
+          "when": "view == ifsBrowser && viewItem == streamfile",
+          "group": "displayfile@0"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vscode-ibmi-renderer.launchRenderer",
+          "when": "editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
+        },
+        {
+          "command": "vscode-ibmi-renderer.showSource",
+          "when": "activeCustomEditorId == ibmi.dspfDesigner"
+        },
+        {
+          "command": "vscode-ibmi-renderer.toggleEditorView",
+          "when": "activeCustomEditorId == ibmi.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         }
       ]
     }
@@ -35,14 +155,14 @@
     "vscode:prepublish": "npm run package",
     "compile": "npm run build:frontend && npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
-    "build:frontend": "mkdir -p webui/scripts && cp node_modules/@vscode-elements/elements/dist/bundled.js webui/scripts/vscode-elements.js && cp node_modules/@vscode/codicons/dist/codicon.css webui/scripts/codicon.css && cp node_modules/@vscode/codicons/dist/codicon.ttf webui/scripts/codicon.ttf && cp node_modules/konva/konva.min.js webui/scripts/konva.min.js",
+    "build:frontend": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('webui/scripts',{recursive:true});const copies=[['node_modules/@vscode-elements/elements/dist/bundled.js','webui/scripts/vscode-elements.js'],['node_modules/@vscode/codicons/dist/codicon.css','webui/scripts/codicon.css'],['node_modules/@vscode/codicons/dist/codicon.ttf','webui/scripts/codicon.ttf'],['node_modules/konva/konva.min.js','webui/scripts/konva.min.js']];for(const [s,d] of copies)fs.copyFileSync(s,d);\"",
     "build:esbuild": "node esbuild.js",
     "build:tsc": "tsc --noEmit --project tsconfig.json",
     "getTsTypesForFile": "tsc --declaration --emitDeclarationOnly --outDir types && cp types/ui/dspf.d.ts webui/dspf.d.ts",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package": "npm run build:frontend && npm run check-types && npm run lint && node esbuild.js --production",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "20.x",
@@ -61,5 +181,9 @@
     "@vscode/codicons": "^0.0.36",
     "konva": "^9.3.20",
     "vitest": "^3.2.0"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true,
+    "esbuild@0.25.5": true
   }
 }

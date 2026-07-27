@@ -1,29 +1,44 @@
+import type { Conditional, DisplayType, DdsLineRange, DdsUpdate, Keyword, PassthroughLine } from "../shared/dspf-types";
 
-export interface DdsLineRange { start: number, endHeader?: number, end: number };
-export interface DdsUpdate { newLines: string[], range?: DdsLineRange };
+export type { Conditional, DisplayType, DdsLineRange, DdsUpdate, Keyword, PassthroughLine };
 
 const GLOBAL_RECORD_NAME = `_GLOBAL`;
+const NUMERIC_TYPES = new Set([`D`, `Z`, `Y`, `S`, `P`, `F`]);
+
+/** Split document text into lines matching VS Code TextDocument line indexes (drop trailing empty from final EOL). */
+export function splitDocumentLines(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === `` && content.match(/\r?\n$/)) {
+    lines.pop();
+  }
+  return lines;
+}
 
 export class DisplayFile {
   public formats: RecordInfo[] = [];
   public currentField: FieldInfo | undefined;
   public currentFields: FieldInfo[] = [];
-  public currentRecord: RecordInfo|undefined = new RecordInfo(GLOBAL_RECORD_NAME);
+  public currentRecord: RecordInfo | undefined = new RecordInfo(GLOBAL_RECORD_NAME);
+  /** Original source lines for round-trip / passthrough */
+  public sourceLines: string[] = [];
 
   constructor() { }
 
-  /**
-  * @param {string[]} lines 
-  */
   parse(lines: string[]) {
+    this.sourceLines = [...lines];
     let textCounter = 0;
 
     let conditionals: string, name: string, len: string, type: string, dec: string, inout: string, x: string, y: string, keywords: string;
 
     lines.forEach((line, index) => {
+      const originalLine = line;
       line = line.padEnd(80);
 
-      if (line[6] === `*`) {
+      // Preserve comments and blank lines as passthrough (not rewritten on field edits)
+      if (line[6] === `*` || originalLine.trim() === ``) {
+        if (this.currentRecord) {
+          this.currentRecord.passthroughLines.push({ lineIndex: index, text: originalLine });
+        }
         return;
       }
 
@@ -40,6 +55,7 @@ export class DisplayFile {
       switch (line[16]) {
         case 'R':
           if (this.currentField) {
+            this.currentField.endRange = index - 1;
             this.currentField.handleKeywords();
             this.currentFields.push(this.currentField);
           };
@@ -54,55 +70,64 @@ export class DisplayFile {
 
           this.currentRecord = new RecordInfo(name);
           this.currentRecord.range.start = index;
+          this.currentRecord.ownedHeaderLines = [index];
 
           this.currentFields = [];
           this.currentField = undefined;
 
-          this.HandleKeywords(keywords);
+          this.HandleKeywords(keywords, conditionals, index);
           break;
 
         case ' ':
           if ((x !== "" && y !== "") || inout === `H`) {
-            // From a regular display file
             if (this.currentField) {
+              this.currentField.endRange = index - 1;
               this.currentField.handleKeywords();
               this.currentFields.push(this.currentField);
             }
 
             this.currentField = new FieldInfo(index);
+            this.currentField.ownedLines = [index];
             this.currentField.position = {
               x: Number(x),
               y: Number(y)
             };
           } else if (x !== "" && y === "") {
-            // From a printer file with no Y position
             if (this.currentField) {
+              this.currentField.endRange = index - 1;
               this.currentField.handleKeywords();
               this.currentFields.push(this.currentField);
             }
 
             let totalX = Number(x);
             if (x.startsWith(`+`)) {
-              totalX = this.currentFields[this.currentFields.length - 1].position.x + Number(x.substring(1));
-
-              if (this.currentFields[this.currentFields.length - 1] && this.currentFields[this.currentFields.length - 1].value) {
-                totalX += this.currentFields[this.currentFields.length - 1].value!.length;
+              const prev = this.currentFields[this.currentFields.length - 1];
+              if (prev) {
+                totalX = prev.position.x + Number(x.substring(1));
+                if (prev.value) {
+                  totalX += prev.value.length;
+                }
+              } else {
+                // First field in format with relative +n — treat as absolute from column 1
+                totalX = Number(x.substring(1)) || 1;
               }
             }
 
             this.currentField = new FieldInfo(index);
+            this.currentField.ownedLines = [index];
             this.currentField.position = {
               x: totalX,
               y: 0
             };
           } else if (name !== undefined && type !== "") {
-            // Some fields have no positions
             if (this.currentField) {
+              this.currentField.endRange = index - 1;
               this.currentField.handleKeywords();
               this.currentFields.push(this.currentField);
             }
 
             this.currentField = new FieldInfo(index, name);
+            this.currentField.ownedLines = [index];
             this.currentField.position = {
               x: -1,
               y: -1
@@ -130,51 +155,58 @@ export class DisplayFile {
                   break;
               }
 
-              this.currentField.type = type;
+              this.currentField.type = type || undefined;
 
-              this.currentField.decimals = 0;
-              switch (type) {
-                case "D":
-                case "Z":
-                case "Y":
-                  this.currentField.primitiveType = `decimal`;
-                  if (dec !== "") { this.currentField.decimals = Number(dec); }
-                  break;
-                case `L`: //Date
-                  this.currentField.length = 8;
-                  this.currentField.primitiveType = `char`;
-                  this.currentField.keywords.push({
-                    name: `DATE`,
-                    value: undefined,
-                    conditions: []
-                  });
-                  break;
-                case `T`: //Time
-                  this.currentField.length = 8;
-                  this.currentField.primitiveType = `char`;
-                  this.currentField.keywords.push({
-                    name: `TIME`,
-                    value: undefined,
-                    conditions: []
-                  });
-                  break;
-                default:
-                  this.currentField.primitiveType = `char`;
-                  break;
+              if (type === `R`) {
+                this.currentField.isReference = true;
+                this.currentField.primitiveType = `char`;
+              } else {
+                this.currentField.decimals = 0;
+                switch (type) {
+                  case "D":
+                  case "Z":
+                  case "Y":
+                  case "S":
+                  case "P":
+                    this.currentField.primitiveType = `decimal`;
+                    if (dec !== "") { this.currentField.decimals = Number(dec); }
+                    break;
+                  case `L`: //Date
+                    this.currentField.length = 8;
+                    this.currentField.primitiveType = `char`;
+                    this.currentField.keywords.push({
+                      name: `DATE`,
+                      value: undefined,
+                      conditions: []
+                    });
+                    break;
+                  case `T`: //Time
+                    this.currentField.length = 8;
+                    this.currentField.primitiveType = `char`;
+                    this.currentField.keywords.push({
+                      name: `TIME`,
+                      value: undefined,
+                      conditions: []
+                    });
+                    break;
+                  default:
+                    this.currentField.primitiveType = `char`;
+                    break;
+                }
               }
 
               this.currentField.conditions.push(
                 ...DisplayFile.parseConditionals(conditionals)
               );
             }
-            this.HandleKeywords(keywords, conditionals);
+            this.HandleKeywords(keywords, conditionals, index);
           }
           else {
             if (this.currentField) {
               if (!this.currentField.name) {
                 textCounter++;
                 this.currentField.name = `TEXT${textCounter}`;
-                if (!this.currentField.value) {this.currentField.value = "";}
+                if (!this.currentField.value) { this.currentField.value = ""; }
                 this.currentField.length = this.currentField.value.length;
                 this.currentField.displayType = `const`;
 
@@ -183,13 +215,14 @@ export class DisplayFile {
                 );
               }
             }
-            this.HandleKeywords(keywords, conditionals);
+            this.HandleKeywords(keywords, conditionals, index);
           }
           break;
       }
     });
 
     if (this.currentField) {
+      this.currentField.endRange = lines.length - 1;
       this.currentField.handleKeywords();
       this.currentFields.push(this.currentField);
     };
@@ -208,53 +241,79 @@ export class DisplayFile {
     this.currentRecord = undefined;
   }
 
-  /**
-  * @param {string} keywords 
-  * @param {string} [conditionals]
-  * @returns 
-  */
-  HandleKeywords(keywords: string, conditionals = ``) {
+  HandleKeywords(keywords: string, conditionals = ``, lineIndex?: number) {
     let insertIndex;
 
     if (this.currentField) {
       insertIndex = this.currentField.keywordStrings.keywordLines.push(keywords);
       this.currentField.keywordStrings.conditionalLines[insertIndex] = conditionals;
+      this.currentField.endRange = (this.currentField.endRange ?? this.currentField.startRange);
+      if (lineIndex !== undefined && !this.currentField.ownedLines.includes(lineIndex)) {
+        // Only count as owned if this is a keyword continuation (not the definition line already added)
+        if (lineIndex !== this.currentField.startRange) {
+          this.currentField.ownedLines.push(lineIndex);
+        }
+      }
     } else if (this.currentRecord) {
       insertIndex = this.currentRecord.keywordStrings.keywordLines.push(keywords);
       this.currentRecord.keywordStrings.conditionalLines[insertIndex] = conditionals;
+      if (lineIndex !== undefined && !this.currentRecord.ownedHeaderLines.includes(lineIndex)) {
+        this.currentRecord.ownedHeaderLines.push(lineIndex);
+      }
     }
-
-
   }
 
+  /**
+   * Parse indicator columns 7-16 (10 chars from line[6..15]).
+   * IBM layout: col7 AND/OR (ignored for now), then up to three 3-char indicator slots.
+   * Also accepts the legacy shifted layout used by older emitters.
+   */
   static parseConditionals(conditionColumns: string): Conditional[] {
-    if (conditionColumns.trim() === "") {return [];}
+    if (conditionColumns.trim() === "") { return []; }
 
-    let conditionals: Conditional[] = [];
+    const padded = conditionColumns.padEnd(10);
+    const conditionals: Conditional[] = [];
 
-    //TODO: something with condition
-    //const condition = conditionColumns.substring(0, 1); //A (and) or O (or)
-
-    let current = "";
-    let negate = false;
-    let indicator = 0;
-
-    let cIndex = 1;
-
-    while (cIndex <= 7) {
-      current = conditionColumns.substring(cIndex, cIndex + 3);
-
-      if (current.trim() !== "") {
-        negate = (conditionColumns.substring(cIndex, cIndex + 1) === "N");
-        indicator = Number(conditionColumns.substring(cIndex + 1, cIndex + 3));
-
-        conditionals.push({indicator, negate});
+    // Prefer IBM: skip col7 (AND/OR / space), read slots at 1,4,7 within the 10-char window
+    // (absolute DDS cols 8-10, 11-13, 14-16 → indexes 1-3, 4-6, 7-9 in substring(6,16))
+    const trySlots = (offsets: number[]) => {
+      const found: Conditional[] = [];
+      for (const cIndex of offsets) {
+        const slot = padded.substring(cIndex, cIndex + 3);
+        if (slot.trim() === "") {
+          continue;
+        }
+        const negate = slot[0] === `N`;
+        const indicator = Number(slot.substring(1, 3).trim());
+        if (!Number.isNaN(indicator) && indicator > 0) {
+          found.push({ indicator, negate });
+        }
       }
+      return found;
+    };
 
-      cIndex += 3;
+    // IBM offsets within conditionColumns
+    let found = trySlots([1, 4, 7]);
+    // Legacy shifted emitter put first indicator at index 0 (col7): " 20      "
+    if (found.length === 0) {
+      found = trySlots([0, 3, 6]);
     }
+    return found;
+  }
 
-    return conditionals;
+  /** Format one indicator as a 3-char IBM slot: " 05" or "N20" */
+  static formatIndicatorSlot(c: Conditional): string {
+    const num = String(c.indicator).padStart(2, `0`);
+    return `${c.negate ? `N` : ` `}${num}`;
+  }
+
+  /** 9 chars after `A` covering cols 8-16 (col7 left as space via `A ` prefix). */
+  static formatConditionString(conditions: Conditional[]): string {
+    return conditions
+      .slice(0, 3)
+      .map(c => DisplayFile.formatIndicatorSlot(c))
+      .join(``)
+      .padEnd(9);
   }
 
   static parseKeywords(keywordStrings: string[], conditionalStrings?: { [line: number]: string }) {
@@ -265,7 +324,6 @@ export class DisplayFile {
     };
 
     const newLineMark = `~`;
-
     let value = keywordStrings.join(newLineMark) + newLineMark;
     let conditionalLine = 1;
 
@@ -292,7 +350,6 @@ export class DisplayFile {
             } else {
               if (inString) {
                 inString = false;
-
                 result.value = innerValue;
                 innerValue = ``;
               } else {
@@ -363,19 +420,16 @@ export class DisplayFile {
 
   public static getLinesForKeyword(keyword: Keyword): string[] {
     const lines: string[] = [];
-
-    // Convert array into groups of three
     const condition = this.conditionalGroups(keyword.conditions);
-
     const firstConditions = condition[0] || [];
-    const conditionStrings = firstConditions.map(c => `${c.negate ? 'N' : ' '}${c.indicator}`).join('').padEnd(9);
+    const conditionStrings = DisplayFile.formatConditionString(firstConditions);
 
     lines.push(`     A ${conditionStrings}                            ${keyword.name}${keyword.value ? `(${keyword.value})` : ``}`);
 
     for (let g = 1; g < condition.length; g++) {
       const group = condition[g];
-      const conditionStrings = group.map(c => `${c.negate ? 'N' : ' '}${c.indicator}`).join('');
-      lines.push(`     A ${conditionStrings}`);
+      const groupStrings = DisplayFile.formatConditionString(group);
+      lines.push(`     A ${groupStrings}`);
     }
 
     return lines;
@@ -396,23 +450,34 @@ export class DisplayFile {
     const y = String(field.position.y).padStart(3, ` `);
     const displayType = FIELD_TYPE[field.displayType!];
 
-    // Convert array into groups of three
     const condition = this.conditionalGroups(field.conditions);
     const firstConditions = condition[0] || [];
-    const conditionStrings = firstConditions.map(c => `${c.negate ? 'N' : ' '}${c.indicator}`).join('').padEnd(9);
+    const conditionStrings = DisplayFile.formatConditionString(firstConditions);
 
     if (field.displayType === `const`) {
       const value = field.value;
       newLines.push(
         `     A ${conditionStrings}                      ${y}${x}'${value}'`,
       );
-    } else if (displayType && field.name) {
-      const definitionType = field.type;
+    } else if (field.isReference && field.name) {
+      const length = field.length ? String(field.length).padStart(5) : `     `;
+      newLines.push(
+        `     A ${conditionStrings}  ${field.name.padEnd(10)} ${length}R  ${displayType || ' '}${y}${x}`,
+      );
+    } else if (displayType !== undefined && field.name) {
+      // Preserve blank type as spaces — never invent A/0 for typeless fields
+      const hasType = !!(field.type && field.type.trim());
+      const definitionType = hasType ? field.type! : ` `;
       const length = String(field.length).padStart(5);
-      const decimals = (field.type !== `A` ? String(field.decimals) : ``).padStart(2);
+      const emitDecimals = hasType && NUMERIC_TYPES.has(field.type!.toUpperCase());
+      const decimals = (emitDecimals ? String(field.decimals) : ``).padStart(2);
       newLines.push(
         `     A ${conditionStrings}  ${field.name.padEnd(10)} ${length}${definitionType}${decimals}${displayType}${y}${x}`,
       );
+    }
+
+    for (let g = 1; g < condition.length; g++) {
+      newLines.push(`     A ${DisplayFile.formatConditionString(condition[g])}`);
     }
 
     for (const keyword of field.keywords) {
@@ -422,103 +487,397 @@ export class DisplayFile {
     return newLines;
   }
 
-  public getRangeForField(recordFormat: string, fieldName: string): DdsLineRange|undefined {
-    let range: DdsLineRange|undefined = undefined;
-    const currentFormatI = this.formats.findIndex(format => format.name === recordFormat);
-    if (currentFormatI > 0) {
-      const currentFormat = this.formats[currentFormatI];
-      const index = currentFormat.fields.findIndex(field => field.name === fieldName);
-      
-      if (index >= 0) {
-        // Update existing field
-        const fieldStart = currentFormat.fields[index].startRange;
-        let fieldEnd: number|undefined = undefined;
+  /**
+   * Field range based on owned (non-passthrough) lines. Mid-span comments are
+   * returned separately so callers can re-insert them after regeneration.
+   */
+  public getRangeForField(recordFormat: string, fieldName: string): DdsLineRange | undefined {
+    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    if (!currentFormat || currentFormat.name === GLOBAL_RECORD_NAME) {
+      return undefined;
+    }
 
-        if (currentFormat.fields[index+1]) {
-          fieldEnd = currentFormat.fields[index+1].startRange;
-        } else {
-          fieldEnd = currentFormat.range.end;
-        }
+    const index = currentFormat.fields.findIndex(field => field.name === fieldName);
+    if (index < 0) {
+      return undefined;
+    }
 
-        if (fieldEnd) {
-          fieldEnd--;
+    const field = currentFormat.fields[index];
+    const owned = field.ownedLines.length > 0
+      ? [...field.ownedLines].sort((a, b) => a - b)
+      : undefined;
 
-          range = { start: fieldStart, end: fieldEnd };
-        }
+    let start = field.startRange;
+    let end = field.endRange ?? field.startRange;
 
+    if (owned && owned.length > 0) {
+      start = owned[0];
+      end = owned[owned.length - 1];
+    } else {
+      // Fallback: shrink trailing passthrough only
+      const passthroughIndexes = new Set(currentFormat.passthroughLines.map(p => p.lineIndex));
+      while (end > start && passthroughIndexes.has(end)) {
+        end--;
       }
     }
 
-    return range;
+    return { start, end };
   }
 
-  // TODO: test cases
-  public updateField(recordFormat: string, originalFieldName: string|undefined, fieldInfo: FieldInfo): DdsUpdate|undefined {
-    const newLines = DisplayFile.getLinesForField(fieldInfo);
+  /** Passthrough lines that sit strictly inside a field's start..end span. */
+  public getMidSpanPassthrough(recordFormat: string, start: number, end: number): PassthroughLine[] {
+    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    if (!currentFormat) {
+      return [];
+    }
+    return currentFormat.passthroughLines
+      .filter(p => p.lineIndex > start && p.lineIndex < end)
+      .sort((a, b) => a.lineIndex - b.lineIndex);
+  }
 
-    let range = this.getRangeForField(recordFormat, originalFieldName!);
+  public updateField(recordFormat: string, originalFieldName: string | undefined, fieldInfo: FieldInfo): DdsUpdate | undefined {
+    const generated = DisplayFile.getLinesForField(fieldInfo);
 
-    if (!range) {
-      const recordFormatDetail = this.formats.find(format => format.name === recordFormat);
-      if (recordFormatDetail) {
-        range = { start: recordFormatDetail?.range.end, end: recordFormatDetail.range.end };
+    if (originalFieldName) {
+      const range = this.getRangeForField(recordFormat, originalFieldName);
+      if (!range) {
+        // Failed lookup must NOT become an insert
+        return undefined;
       }
+
+      // Rebuild span keeping mid-span comments in their relative positions
+      const mid = this.getMidSpanPassthrough(recordFormat, range.start, range.end);
+      const midMap = new Map(mid.map(p => [p.lineIndex, p.text]));
+      let gi = 0;
+      const newLines: string[] = [];
+      for (let i = range.start; i <= range.end; i++) {
+        if (midMap.has(i)) {
+          newLines.push(midMap.get(i)!);
+        } else if (gi < generated.length) {
+          newLines.push(generated[gi++]);
+        }
+      }
+      while (gi < generated.length) {
+        newLines.push(generated[gi++]);
+      }
+
+      return { newLines, range: { start: range.start, end: range.end } };
     }
 
-    return { newLines, range };
+    // New field insert
+    const recordFormatDetail = this.formats.find(format => format.name === recordFormat);
+    if (!recordFormatDetail) {
+      return undefined;
+    }
+    return {
+      newLines: generated,
+      range: { start: recordFormatDetail.range.end, end: recordFormatDetail.range.end },
+    };
   }
 
-  // TODO: test cases
+  /**
+   * Apply a field update to a copy of source lines without touching unrelated lines.
+   * Insert when start === end (and pointing at next format / EOF); replace otherwise.
+   */
+  public applyUpdateToLines(lines: string[], update: DdsUpdate): string[] {
+    if (!update.range) {
+      return lines;
+    }
+    const result = [...lines];
+    const { start, end } = update.range;
+
+    // Pure insert (new field): never delete the line at start
+    if (start === end) {
+      if (start >= result.length) {
+        result.push(...update.newLines);
+      } else {
+        result.splice(start, 0, ...update.newLines);
+      }
+      return result;
+    }
+
+    const deleteCount = Math.max(0, end - start + 1);
+    result.splice(start, deleteCount, ...update.newLines);
+    return result;
+  }
+
   static getHeaderLinesForFormat(recordFormat: string, keywords: Keyword[]): string[] {
     const lines: string[] = [];
 
-    if (recordFormat) {
+    if (recordFormat && recordFormat !== GLOBAL_RECORD_NAME) {
       lines.push(`     A          R ${recordFormat}`);
     }
 
     for (const keyword of keywords) {
-      // TODO: support conditions
       lines.push(...DisplayFile.getLinesForKeyword(keyword));
     }
 
     return lines;
   }
 
-  public getHeaderRangeForFormat(recordFormat: string): DdsLineRange|undefined {
-    let range: DdsLineRange|undefined = undefined;
-    const currentFormatI = this.formats.findIndex(format => format.name === recordFormat);
-    if (currentFormatI > 0) {
-      range = { start: this.formats[currentFormatI].range.start, end: this.formats[currentFormatI].range.end };
+  public getHeaderRangeForFormat(recordFormat: string): DdsLineRange | undefined {
+    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    if (!currentFormat) {
+      return undefined;
+    }
 
-      const currentFormat = this.formats[currentFormatI];
-      const firstField = currentFormat.fields[0];
-
-      if (firstField) {
-        range.endHeader = firstField.startRange-1;
-      } else {
-        range.endHeader = range.start;
+    // File-level keywords live on the synthetic _GLOBAL format (before first R)
+    if (currentFormat.name === GLOBAL_RECORD_NAME) {
+      const owned = [...currentFormat.ownedHeaderLines].sort((a, b) => a - b);
+      if (owned.length > 0) {
+        return {
+          start: owned[0],
+          end: owned[owned.length - 1] + 1,
+          endHeader: owned[owned.length - 1],
+        };
       }
+
+      // Insert before the first record format (or at EOF if none)
+      const firstReal = this.formats.find((f) => f.name !== GLOBAL_RECORD_NAME);
+      const insertAt = firstReal ? firstReal.range.start : this.sourceLines.length;
+      return {
+        start: insertAt,
+        end: insertAt,
+        endHeader: insertAt - 1, // end < start → insert (deleteCount 0)
+      };
+    }
+
+    const range: DdsLineRange = { start: currentFormat.range.start, end: currentFormat.range.end };
+    const firstField = currentFormat.fields[0];
+    const passthroughIndexes = new Set(currentFormat.passthroughLines.map(p => p.lineIndex));
+
+    if (currentFormat.ownedHeaderLines.length > 0) {
+      const owned = [...currentFormat.ownedHeaderLines].sort((a, b) => a - b);
+      range.endHeader = owned[owned.length - 1];
+    } else if (firstField) {
+      range.endHeader = firstField.startRange - 1;
+      while (range.endHeader > range.start && passthroughIndexes.has(range.endHeader)) {
+        range.endHeader--;
+      }
+    } else {
+      // Empty format (keywords only): include all lines until next format / EOF
+      range.endHeader = range.end > range.start ? range.end - 1 : range.start;
     }
 
     return range;
   }
 
-  // TODO: test cases
-  public updateFormatHeader(originalFormatName: string, keywords: Keyword[]): DdsUpdate|undefined {
-    const newLines = DisplayFile.getHeaderLinesForFormat(originalFormatName, keywords);
-    let range = this.getHeaderRangeForFormat(originalFormatName);
+  public updateFormatHeader(originalFormatName: string, keywords: Keyword[]): DdsUpdate | undefined {
+    const generated = DisplayFile.getHeaderLinesForFormat(originalFormatName, keywords);
+    const range = this.getHeaderRangeForFormat(originalFormatName);
 
-    if (range) {
-      range = {
-        start: range.start,
-        end: range.endHeader || range.end,
-      };
+    if (!range) {
+      return undefined;
+    }
+
+    const start = range.start;
+    const end = range.endHeader ?? range.end;
+    const mid = this.getMidSpanPassthrough(originalFormatName, start, end);
+    const midMap = new Map(mid.map(p => [p.lineIndex, p.text]));
+    let gi = 0;
+    const newLines: string[] = [];
+    for (let i = start; i <= end; i++) {
+      if (midMap.has(i)) {
+        newLines.push(midMap.get(i)!);
+      } else if (gi < generated.length) {
+        newLines.push(generated[gi++]);
+      }
+    }
+    while (gi < generated.length) {
+      newLines.push(generated[gi++]);
     }
 
     return {
       newLines,
-      range
+      range: { start, end },
     };
+  }
+
+  /** IBM i DDS record-format name: 1–10 chars, A–Z/@/#/$ then A–Z/0–9/@/#/$. */
+  public static isValidRecordName(name: string): boolean {
+    return /^[A-Z@#$][A-Z0-9@#$]{0,9}$/.test((name || ``).trim().toUpperCase());
+  }
+
+  /**
+   * Append one or more new record formats at end of file.
+   * Used for standard records and SFL + SFLCTL pairs.
+   */
+  public insertFormats(formats: { name: string; keywords?: Keyword[] }[]): DdsUpdate | undefined {
+    if (!formats.length) {
+      return undefined;
+    }
+
+    const taken = new Set(
+      this.formats
+        .map((f) => f.name.toUpperCase())
+        .filter((n) => n && n !== GLOBAL_RECORD_NAME)
+    );
+    const newLines: string[] = [];
+
+    for (const spec of formats) {
+      const name = (spec.name || ``).trim().toUpperCase();
+      if (!DisplayFile.isValidRecordName(name) || name === GLOBAL_RECORD_NAME || taken.has(name)) {
+        return undefined;
+      }
+      taken.add(name);
+      newLines.push(
+        ...DisplayFile.getHeaderLinesForFormat(name, spec.keywords || [])
+      );
+    }
+
+    const start = this.sourceLines.length;
+    return {
+      newLines,
+      range: { start, end: start },
+    };
+  }
+
+  /**
+   * Inclusive line span for a real record format body (R line through line before next format / EOF).
+   * `range.end` on RecordInfo is exclusive.
+   */
+  public getFormatBodyRange(recordFormat: string): DdsLineRange | undefined {
+    const currentFormat = this.formats.find((format) => format.name === recordFormat);
+    if (!currentFormat || currentFormat.name === GLOBAL_RECORD_NAME) {
+      return undefined;
+    }
+    const start = currentFormat.range.start;
+    const endExclusive = currentFormat.range.end > start
+      ? currentFormat.range.end
+      : this.sourceLines.length;
+    const end = endExclusive - 1;
+    if (start < 0 || end < start) {
+      return undefined;
+    }
+    return { start, end };
+  }
+
+  public deleteFormat(recordFormat: string): DdsUpdate | undefined {
+    const body = this.getFormatBodyRange(recordFormat);
+    if (!body) {
+      return undefined;
+    }
+    return { newLines: [], range: body };
+  }
+
+  /**
+   * Rename a record format and retarget SFLCTL / SFLMSGRCD references to the old name.
+   */
+  public renameFormat(oldName: string, newName: string): DdsUpdate | undefined {
+    const from = (oldName || ``).trim().toUpperCase();
+    const to = (newName || ``).trim().toUpperCase();
+    if (!DisplayFile.isValidRecordName(to) || to === GLOBAL_RECORD_NAME) {
+      return undefined;
+    }
+    const format = this.formats.find((f) => f.name === from);
+    if (!format || format.name === GLOBAL_RECORD_NAME) {
+      return undefined;
+    }
+    if (this.formats.some((f) => f.name === to && f.name !== from)) {
+      return undefined;
+    }
+
+    const lines = [...this.sourceLines];
+    const rIdx = format.range.start;
+    if (rIdx < 0 || rIdx >= lines.length) {
+      return undefined;
+    }
+    lines[rIdx] = DisplayFile.replaceRecordNameOnRLine(lines[rIdx], to);
+
+    for (let i = 0; i < lines.length; i++) {
+      lines[i] = DisplayFile.retargetFormatRefsInLine(lines[i], from, to);
+    }
+
+    return {
+      newLines: lines,
+      range: { start: 0, end: Math.max(0, lines.length - 1) },
+    };
+  }
+
+  /** Duplicate a format at EOF under a new name. */
+  public copyFormat(sourceName: string, newName: string): DdsUpdate | undefined {
+    const from = (sourceName || ``).trim().toUpperCase();
+    const to = (newName || ``).trim().toUpperCase();
+    if (!DisplayFile.isValidRecordName(to) || to === GLOBAL_RECORD_NAME) {
+      return undefined;
+    }
+    if (this.formats.some((f) => f.name.toUpperCase() === to)) {
+      return undefined;
+    }
+    const body = this.getFormatBodyRange(from);
+    if (!body) {
+      return undefined;
+    }
+
+    const copied = this.sourceLines.slice(body.start, body.end + 1).map((line, i) => {
+      if (i === 0) {
+        return DisplayFile.replaceRecordNameOnRLine(line, to);
+      }
+      return line;
+    });
+
+    const start = this.sourceLines.length;
+    return {
+      newLines: copied,
+      range: { start, end: start },
+    };
+  }
+
+  static replaceRecordNameOnRLine(line: string, newName: string): string {
+    const padded = line.padEnd(80);
+    // Name starts at column 19 (0-based 18) after `R `
+    if (padded.length > 18 && padded[16] === `R`) {
+      const before = padded.substring(0, 18);
+      const after = padded.substring(18 + 10);
+      return (before + newName.padEnd(10) + after).trimEnd();
+    }
+    return line.replace(/\bR\s+\S+/, `R ${newName}`);
+  }
+
+  static retargetFormatRefsInLine(line: string, oldName: string, newName: string): string {
+    const re = new RegExp(`\\b(SFLCTL|SFLMSGRCD)\\(\\s*${oldName}\\s*\\)`, `gi`);
+    return line.replace(re, (_m, kw: string) => `${kw.toUpperCase()}(${newName})`);
+  }
+
+  /** Mutate in-memory model after a successful document edit (incremental). */
+  public replaceFieldInMemory(recordFormat: string, originalFieldName: string | undefined, fieldInfo: FieldInfo, newStart: number, newEnd: number) {
+    const format = this.formats.find(f => f.name === recordFormat);
+    if (!format) {
+      return;
+    }
+
+    if (originalFieldName) {
+      const idx = format.fields.findIndex(f => f.name === originalFieldName);
+      if (idx >= 0) {
+        const updated = FieldInfo.fromData(fieldInfo);
+        updated.startRange = newStart;
+        updated.endRange = newEnd;
+        format.fields[idx] = updated;
+        return;
+      }
+    }
+
+    const created = FieldInfo.fromData(fieldInfo);
+    created.startRange = newStart;
+    created.endRange = newEnd;
+    format.fields.push(created);
+  }
+
+  public removeFieldInMemory(recordFormat: string, fieldName: string) {
+    const format = this.formats.find(f => f.name === recordFormat);
+    if (!format) {
+      return;
+    }
+    format.fields = format.fields.filter(f => f.name !== fieldName);
+  }
+
+  public replaceFormatKeywordsInMemory(recordFormat: string, keywords: Keyword[]) {
+    const format = this.formats.find(f => f.name === recordFormat);
+    if (!format) {
+      return;
+    }
+    format.keywords = [...keywords];
+    format.handleKeywordsFromList();
   }
 }
 
@@ -530,14 +889,25 @@ export class RecordInfo {
   public windowSize: { y: number, x: number, width: number, height: number } = { y: 0, x: 0, width: 80, height: 24 };
   public keywordStrings: { keywordLines: string[], conditionalLines: { [lineIndex: number]: string } } = { keywordLines: [], conditionalLines: {} };
   public keywords: Keyword[] = [];
+  public passthroughLines: PassthroughLine[] = [];
+  /** Non-passthrough header lines (R line + keyword lines) */
+  public ownedHeaderLines: number[] = [];
 
   constructor(public name: string) { }
 
   handleKeywords() {
     const data = DisplayFile.parseKeywords(this.keywordStrings.keywordLines, this.keywordStrings.conditionalLines);
-
     this.keywords.push(...data.keywords);
+    this.applyWindowKeywords();
+  }
 
+  handleKeywordsFromList() {
+    this.applyWindowKeywords();
+  }
+
+  private applyWindowKeywords() {
+    this.isWindow = false;
+    this.windowReference = undefined;
     this.keywords.forEach(keyword => {
       switch (keyword.name) {
         case "WINDOW":
@@ -546,7 +916,6 @@ export class RecordInfo {
             let points = keyword.value.split(' ');
 
             if (points.length >= 3 && points[0].toUpperCase() === `*DFT`) {
-              // WINDOW (*DFT Y X)
               this.windowSize = {
                 y: 2,
                 x: 2,
@@ -555,11 +924,8 @@ export class RecordInfo {
               };
             } else {
               if (points.length === 1) {
-                // WINDOW (REF)
                 this.windowReference = points[0];
-
               } else if (points.length >= 4) {
-                // WINDOW (*DFT SY SX Y X)
                 this.windowSize = {
                   y: Number(points[0]) || 2,
                   x: Number(points[1]) || 2,
@@ -569,32 +935,15 @@ export class RecordInfo {
               }
             }
 
-            switch (points[0]) {
-              case `*DFT`:
-                break;
-            }
-
-            switch (points.length) {
-              case 4:
-                //WINDOW (STARTY STARTX SIZEY SIZEX)
-
-                break;
-              case 1:
-                //WINDOW (REF)
-                this.windowReference = points[0];
-                break;
+            if (points.length === 1) {
+              this.windowReference = points[0];
             }
           }
-
           break;
       }
     });
   }
 }
-
-export interface Keyword { name: string, value?: string, conditions: Conditional[] };
-
-export type DisplayType = "input" | "output" | "both" | "const" | "hidden";
 
 export class FieldInfo {
   public value: string | undefined;
@@ -607,8 +956,33 @@ export class FieldInfo {
   public keywordStrings: { keywordLines: string[], conditionalLines: { [lineIndex: number]: string } } = { keywordLines: [], conditionalLines: {} };
   public conditions: Conditional[] = [];
   public keywords: Keyword[] = [];
+  public endRange: number | undefined;
+  public reference: string | undefined;
+  public isReference: boolean = false;
+  /** Non-passthrough lines owned by this field (definition + keywords) */
+  public ownedLines: number[] = [];
 
-  constructor(public startRange: number, public name?: string) {}
+  constructor(public startRange: number, public name?: string) {
+    this.ownedLines = [startRange];
+  }
+
+  static fromData(data: Partial<FieldInfo> & { position?: { x: number; y: number } }): FieldInfo {
+    const field = new FieldInfo(data.startRange ?? 0, data.name);
+    field.value = data.value;
+    field.type = data.type;
+    field.primitiveType = data.primitiveType;
+    field.displayType = data.displayType;
+    field.length = data.length ?? 0;
+    field.decimals = data.decimals ?? 0;
+    field.position = data.position ? { ...data.position } : { x: 0, y: 0 };
+    field.conditions = data.conditions ? [...data.conditions] : [];
+    field.keywords = data.keywords ? data.keywords.map(k => ({ ...k, conditions: [...(k.conditions || [])] })) : [];
+    field.endRange = data.endRange;
+    field.reference = data.reference;
+    field.isReference = data.isReference ?? false;
+    field.ownedLines = data.ownedLines ? [...data.ownedLines] : [field.startRange];
+    return field;
+  }
 
   handleKeywords() {
     const data = DisplayFile.parseKeywords(this.keywordStrings.keywordLines, this.keywordStrings.conditionalLines);
@@ -618,10 +992,11 @@ export class FieldInfo {
     if (data.value.length > 0) {
       this.value = data.value;
     }
-  }
-}
 
-export interface Conditional {
-  indicator: number,
-  negate: boolean  
+    const reffld = this.keywords.find(k => k.name === `REFFLD`);
+    if (reffld?.value) {
+      this.isReference = true;
+      this.reference = reffld.value;
+    }
+  }
 }
