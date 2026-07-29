@@ -1,8 +1,10 @@
-.vscode/**
+.vscode
 .vscode-test/**
 out/**
 node_modules/**
 src/**
+docs/**
+.github/**
 .gitignore
 .yarnrc
 esbuild.js
@@ -13,3 +15,4 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 tests
+webui/src/**

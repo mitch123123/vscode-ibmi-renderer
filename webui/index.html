@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <script src="{elements}" type="module"></script>
@@ -8,9 +10,10 @@
 </head>
 
 <body style="padding: 0; margin: 0;">
-  <div id="connectionBanner" class="connection-banner" hidden>
+  <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
     IBM i connection lost — editing is disabled until you reconnect.
   </div>
+  <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
   <div class="toolbar">
     <div class="toolbar-start">
       <div class="view-switch" role="tablist" aria-label="Editor view">
@@ -26,7 +29,7 @@
     <div class="toolbar-actions">
       <span id="cursorBadge" class="badge"></span>
       <span id="modeBadge" class="badge">Design</span>
-      <select id="screenSizeSelect" title="Screen size">
+      <select id="screenSizeSelect" title="Screen size" aria-label="Screen size">
         <option value="auto">Size: Auto (DDS)</option>
         <option value="ds3">24 × 80 (*DS3)</option>
         <option value="ds4">27 × 132 (*DS4)</option>
@@ -49,8 +52,8 @@
       ▶
     </button>
 
-    <div class="canvas-wrap">
-      <div id="container"></div>
+    <div class="canvas-wrap" role="tabpanel" id="canvasTabPanel" aria-label="Design surface">
+      <div id="container" tabindex="0" role="application" aria-label="Display file design surface"></div>
     </div>
 
     <button type="button" id="expandRightSidebar" class="sidebar-rail right" title="Show field tools" aria-label="Show field tools" hidden>
@@ -68,3 +71,4 @@
     </aside>
   </div>
 </body>
+</html>

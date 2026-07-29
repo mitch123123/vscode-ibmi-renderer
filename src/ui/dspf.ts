@@ -1,4 +1,5 @@
 import type { Conditional, DisplayType, DdsLineRange, DdsUpdate, Keyword, PassthroughLine } from "../shared/dspf-types";
+import { isValidRecordName as isValidRecordNameShared } from "../shared/recordName";
 
 export type { Conditional, DisplayType, DdsLineRange, DdsUpdate, Keyword, PassthroughLine };
 
@@ -490,14 +491,18 @@ export class DisplayFile {
   /**
    * Field range based on owned (non-passthrough) lines. Mid-span comments are
    * returned separately so callers can re-insert them after regeneration.
+   *
+   * @param recordFormat DDS record name (case-insensitive lookup).
+   * @param fieldName Field name (case-insensitive lookup); must not be a TEXT* synthetic.
    */
   public getRangeForField(recordFormat: string, fieldName: string): DdsLineRange | undefined {
-    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    const currentFormat = this.findFormat(recordFormat);
     if (!currentFormat || currentFormat.name === GLOBAL_RECORD_NAME) {
       return undefined;
     }
 
-    const index = currentFormat.fields.findIndex(field => field.name === fieldName);
+    const upperName = (fieldName || ``).trim().toUpperCase();
+    const index = currentFormat.fields.findIndex(field => (field.name || ``).toUpperCase() === upperName);
     if (index < 0) {
       return undefined;
     }
@@ -526,7 +531,7 @@ export class DisplayFile {
 
   /** Passthrough lines that sit strictly inside a field's start..end span. */
   public getMidSpanPassthrough(recordFormat: string, start: number, end: number): PassthroughLine[] {
-    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    const currentFormat = this.findFormat(recordFormat);
     if (!currentFormat) {
       return [];
     }
@@ -564,20 +569,22 @@ export class DisplayFile {
       return { newLines, range: { start: range.start, end: range.end } };
     }
 
-    // New field insert
-    const recordFormatDetail = this.formats.find(format => format.name === recordFormat);
-    if (!recordFormatDetail) {
+    // New field insert (end < start → pure insert)
+    const recordFormatDetail = this.findFormat(recordFormat);
+    if (!recordFormatDetail || recordFormatDetail.name === GLOBAL_RECORD_NAME) {
       return undefined;
     }
+    const insertAt = recordFormatDetail.range.end;
     return {
       newLines: generated,
-      range: { start: recordFormatDetail.range.end, end: recordFormatDetail.range.end },
+      range: { start: insertAt, end: insertAt - 1 },
     };
   }
 
   /**
-   * Apply a field update to a copy of source lines without touching unrelated lines.
-   * Insert when start === end (and pointing at next format / EOF); replace otherwise.
+   * Apply a field/format update to a copy of source lines.
+   * Insert when end < start; replace/delete inclusive start..end otherwise
+   * (including start === end → replace that single line).
    */
   public applyUpdateToLines(lines: string[], update: DdsUpdate): string[] {
     if (!update.range) {
@@ -586,8 +593,8 @@ export class DisplayFile {
     const result = [...lines];
     const { start, end } = update.range;
 
-    // Pure insert (new field): never delete the line at start
-    if (start === end) {
+    // Pure insert: end < start (deleteCount would be 0)
+    if (end < start) {
       if (start >= result.length) {
         result.push(...update.newLines);
       } else {
@@ -616,7 +623,7 @@ export class DisplayFile {
   }
 
   public getHeaderRangeForFormat(recordFormat: string): DdsLineRange | undefined {
-    const currentFormat = this.formats.find(format => format.name === recordFormat);
+    const currentFormat = this.findFormat(recordFormat);
     if (!currentFormat) {
       return undefined;
     }
@@ -695,7 +702,7 @@ export class DisplayFile {
 
   /** IBM i DDS record-format name: 1–10 chars, A–Z/@/#/$ then A–Z/0–9/@/#/$. */
   public static isValidRecordName(name: string): boolean {
-    return /^[A-Z@#$][A-Z0-9@#$]{0,9}$/.test((name || ``).trim().toUpperCase());
+    return isValidRecordNameShared(name);
   }
 
   /**
@@ -728,8 +735,20 @@ export class DisplayFile {
     const start = this.sourceLines.length;
     return {
       newLines,
-      range: { start, end: start },
+      range: { start, end: start - 1 },
     };
+  }
+
+  /**
+   * Case-insensitive record-format lookup by name.
+   *
+   * Note: this does NOT filter out the synthetic `_GLOBAL` format — callers
+   * that only care about real record formats must additionally check
+   * `result.name !== '_GLOBAL'`.
+   */
+  public findFormat(recordFormat: string): RecordInfo | undefined {
+    const upper = (recordFormat || ``).trim().toUpperCase();
+    return this.formats.find((f) => f.name.toUpperCase() === upper);
   }
 
   /**
@@ -737,7 +756,7 @@ export class DisplayFile {
    * `range.end` on RecordInfo is exclusive.
    */
   public getFormatBodyRange(recordFormat: string): DdsLineRange | undefined {
-    const currentFormat = this.formats.find((format) => format.name === recordFormat);
+    const currentFormat = this.findFormat(recordFormat);
     if (!currentFormat || currentFormat.name === GLOBAL_RECORD_NAME) {
       return undefined;
     }
@@ -752,46 +771,95 @@ export class DisplayFile {
     return { start, end };
   }
 
+  /**
+   * Names of formats that reference `recordFormat` via SFLCTL or SFLMSGRCD.
+   * Used to block subfile-record deletion while the matching CTL still exists,
+   * and to warn users before they invalidate a subfile pair.
+   */
+  public formatsReferencing(recordFormat: string): string[] {
+    const target = (recordFormat || ``).trim().toUpperCase();
+    const refs: string[] = [];
+    for (const format of this.formats) {
+      if (format.name === GLOBAL_RECORD_NAME || format.name.toUpperCase() === target) {
+        continue;
+      }
+      for (const kw of format.keywords || []) {
+        const name = (kw.name || ``).toUpperCase();
+        if (name !== `SFLCTL` && name !== `SFLMSGRCD`) {
+          continue;
+        }
+        if (String(kw.value || ``).trim().toUpperCase() === target) {
+          refs.push(format.name);
+          break;
+        }
+      }
+    }
+    return refs;
+  }
+
   public deleteFormat(recordFormat: string): DdsUpdate | undefined {
     const body = this.getFormatBodyRange(recordFormat);
     if (!body) {
+      return undefined;
+    }
+    if (this.formatsReferencing(recordFormat).length > 0) {
       return undefined;
     }
     return { newLines: [], range: body };
   }
 
   /**
-   * Rename a record format and retarget SFLCTL / SFLMSGRCD references to the old name.
+   * Rename a record format and retarget SFLCTL / SFLMSGRCD references from the old name.
+   * Returns scoped per-line updates (R-line + any referencing keyword lines) so the
+   * host can apply a small WorkspaceEdit instead of rewriting the whole file.
+   * Returns `undefined` when the rename is invalid (bad name, unknown source, collision)
+   * or when the new name equals the old (no-op).
    */
-  public renameFormat(oldName: string, newName: string): DdsUpdate | undefined {
+  public renameFormat(oldName: string, newName: string): DdsUpdate[] | undefined {
     const from = (oldName || ``).trim().toUpperCase();
     const to = (newName || ``).trim().toUpperCase();
     if (!DisplayFile.isValidRecordName(to) || to === GLOBAL_RECORD_NAME) {
       return undefined;
     }
-    const format = this.formats.find((f) => f.name === from);
+    if (from === to) {
+      // Nothing to do; avoid emitting a spurious workspace edit.
+      return undefined;
+    }
+    const format = this.findFormat(from);
     if (!format || format.name === GLOBAL_RECORD_NAME) {
       return undefined;
     }
-    if (this.formats.some((f) => f.name === to && f.name !== from)) {
+    if (this.formats.some((f) => f.name.toUpperCase() === to)) {
       return undefined;
     }
 
-    const lines = [...this.sourceLines];
+    const lines = this.sourceLines;
     const rIdx = format.range.start;
     if (rIdx < 0 || rIdx >= lines.length) {
       return undefined;
     }
-    lines[rIdx] = DisplayFile.replaceRecordNameOnRLine(lines[rIdx], to);
+
+    const updates: DdsUpdate[] = [
+      {
+        newLines: [DisplayFile.replaceRecordNameOnRLine(lines[rIdx], to)],
+        range: { start: rIdx, end: rIdx },
+      },
+    ];
 
     for (let i = 0; i < lines.length; i++) {
-      lines[i] = DisplayFile.retargetFormatRefsInLine(lines[i], from, to);
+      if (i === rIdx) {
+        continue;
+      }
+      const next = DisplayFile.retargetFormatRefsInLine(lines[i], from, to);
+      if (next !== lines[i]) {
+        updates.push({
+          newLines: [next],
+          range: { start: i, end: i },
+        });
+      }
     }
 
-    return {
-      newLines: lines,
-      range: { start: 0, end: Math.max(0, lines.length - 1) },
-    };
+    return updates;
   }
 
   /** Duplicate a format at EOF under a new name. */
@@ -819,7 +887,7 @@ export class DisplayFile {
     const start = this.sourceLines.length;
     return {
       newLines: copied,
-      range: { start, end: start },
+      range: { start, end: start - 1 },
     };
   }
 
@@ -834,20 +902,40 @@ export class DisplayFile {
     return line.replace(/\bR\s+\S+/, `R ${newName}`);
   }
 
+  /**
+   * Escape a string for safe use inside a `RegExp` literal.
+   * Needed because DDS names may contain `$`, `#`, `@` — the first of which
+   * has special meaning in regex replacement patterns.
+   */
+  static escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, `\\$&`);
+  }
+
+  /**
+   * Retarget SFLCTL / SFLMSGRCD references to `oldName` on a single DDS line.
+   * Case-insensitive on the keyword; preserves surrounding spaces inside the
+   * parentheses. Non-matching lines are returned unchanged.
+   */
   static retargetFormatRefsInLine(line: string, oldName: string, newName: string): string {
-    const re = new RegExp(`\\b(SFLCTL|SFLMSGRCD)\\(\\s*${oldName}\\s*\\)`, `gi`);
+    const escaped = DisplayFile.escapeRegExp(oldName);
+    const re = new RegExp(`\\b(SFLCTL|SFLMSGRCD)\\(\\s*${escaped}\\s*\\)`, `gi`);
     return line.replace(re, (_m, kw: string) => `${kw.toUpperCase()}(${newName})`);
   }
 
-  /** Mutate in-memory model after a successful document edit (incremental). */
+  /**
+   * Mutate the in-memory model after a successful document edit (incremental).
+   * Used by callers that don't want a full re-parse. Kept private-ish; the
+   * host currently prefers `load()` / `refreshAfterEdit()` for correctness.
+   */
   public replaceFieldInMemory(recordFormat: string, originalFieldName: string | undefined, fieldInfo: FieldInfo, newStart: number, newEnd: number) {
-    const format = this.formats.find(f => f.name === recordFormat);
+    const format = this.findFormat(recordFormat);
     if (!format) {
       return;
     }
 
     if (originalFieldName) {
-      const idx = format.fields.findIndex(f => f.name === originalFieldName);
+      const upperName = originalFieldName.toUpperCase();
+      const idx = format.fields.findIndex(f => (f.name || ``).toUpperCase() === upperName);
       if (idx >= 0) {
         const updated = FieldInfo.fromData(fieldInfo);
         updated.startRange = newStart;
@@ -864,15 +952,16 @@ export class DisplayFile {
   }
 
   public removeFieldInMemory(recordFormat: string, fieldName: string) {
-    const format = this.formats.find(f => f.name === recordFormat);
+    const format = this.findFormat(recordFormat);
     if (!format) {
       return;
     }
-    format.fields = format.fields.filter(f => f.name !== fieldName);
+    const upperName = (fieldName || ``).toUpperCase();
+    format.fields = format.fields.filter(f => (f.name || ``).toUpperCase() !== upperName);
   }
 
   public replaceFormatKeywordsInMemory(recordFormat: string, keywords: Keyword[]) {
-    const format = this.formats.find(f => f.name === recordFormat);
+    const format = this.findFormat(recordFormat);
     if (!format) {
       return;
     }
@@ -959,6 +1048,13 @@ export class FieldInfo {
   public endRange: number | undefined;
   public reference: string | undefined;
   public isReference: boolean = false;
+  /**
+   * Length resolved from the referenced database file (via SYSCOLUMNS) for
+   * reference fields whose DDS source leaves the length column blank. Used
+   * only for rendering — `getLinesForField` still emits from `length` so the
+   * source column stays blank on round-trip.
+   */
+  public resolvedLength: number | undefined;
   /** Non-passthrough lines owned by this field (definition + keywords) */
   public ownedLines: number[] = [];
 
@@ -980,6 +1076,7 @@ export class FieldInfo {
     field.endRange = data.endRange;
     field.reference = data.reference;
     field.isReference = data.isReference ?? false;
+    field.resolvedLength = data.resolvedLength;
     field.ownedLines = data.ownedLines ? [...data.ownedLines] : [field.startRange];
     return field;
   }

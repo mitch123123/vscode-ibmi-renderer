@@ -156,10 +156,7 @@ export function clearDraggingField() {
   draggingField = undefined;
 }
 
-/** @param {string} name */
-export function isValidRecordName(name) {
-  return /^[A-Z@#$][A-Z0-9@#$]{0,9}$/.test((name || ``).trim().toUpperCase());
-}
+export { isValidRecordName } from "../../src/shared/recordName.ts";
 
 /**
  * @param {string} prefix

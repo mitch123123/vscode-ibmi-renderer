@@ -163,7 +163,7 @@ export function createValuesPanel(id, properties, onUpdate) {
     return cell;
   };
 
-  const createInputCell = (fieldId, value) => {
+  const createInputCell = (fieldId, value, labelText) => {
     const cell = document.createElement(`vscode-table-cell`);
     const input = document.createElement(`code`);
     input.id = fieldId;
@@ -171,6 +171,8 @@ export function createValuesPanel(id, properties, onUpdate) {
     input.dataset.propId = fieldId;
     input.innerText = value == null ? `` : String(value);
     input.setAttribute(`contenteditable`, `true`);
+    input.setAttribute(`role`, `textbox`);
+    input.setAttribute(`aria-label`, labelText || fieldId);
     cell.appendChild(input);
     return cell;
   };
@@ -217,7 +219,7 @@ export function createValuesPanel(id, properties, onUpdate) {
     if (prop.id && prop.options) {
       row.append(createSelectCell(prop.id, prop.value, prop.options));
     } else if (prop.id) {
-      row.append(createInputCell(prop.id, prop.value));
+      row.append(createInputCell(prop.id, prop.value, prop.label));
     } else {
       row.append(createLabelCell(String(prop.value ?? ``)));
     }
@@ -639,11 +641,34 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
  * @param {{title: string, html: string|Element, open?: boolean}[]} sections
  */
 export function renderSections(sidebar, sections) {
+  const active = document.activeElement;
+  /** @type {{ kind: "id"|"propId", value: string }|undefined} */
+  let focusKey;
+  if (active instanceof HTMLElement && sidebar.contains(active)) {
+    if (active.id) {
+      focusKey = { kind: `id`, value: active.id };
+    } else if (active.dataset?.propId) {
+      focusKey = { kind: `propId`, value: active.dataset.propId };
+    }
+  }
+
+  /** @type {Map<string, boolean>} */
+  const openByTitle = new Map();
+  sidebar.querySelectorAll(`vscode-collapsible`).forEach((el) => {
+    const title = el.getAttribute(`title`) || ``;
+    if (title) {
+      openByTitle.set(title, el.hasAttribute(`open`));
+    }
+  });
+
   sidebar.innerHTML = ``;
   for (let section of sections) {
     let newSection = document.createElement(`vscode-collapsible`);
     newSection.setAttribute(`title`, section.title);
-    if (section.open) {
+    const wasOpen = openByTitle.has(section.title)
+      ? openByTitle.get(section.title)
+      : section.open;
+    if (wasOpen) {
       newSection.setAttribute(`open`, ``);
     }
     if (typeof section.html === `string`) {
@@ -652,5 +677,26 @@ export function renderSections(sidebar, sections) {
       newSection.appendChild(section.html);
     }
     sidebar.appendChild(newSection);
+  }
+
+  if (focusKey) {
+    /** @type {HTMLElement|null} */
+    let next = null;
+    if (focusKey.kind === `id`) {
+      next = sidebar.querySelector(`#${CSS.escape(focusKey.value)}`);
+    } else {
+      next = sidebar.querySelector(`[data-prop-id="${CSS.escape(focusKey.value)}"]`);
+    }
+    if (next instanceof HTMLElement) {
+      next.focus();
+      if (next.isContentEditable) {
+        const range = document.createRange();
+        range.selectNodeContents(next);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    }
   }
 }

@@ -1,5 +1,7 @@
 import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, getEditorMode, setConnectionConnected, requestShowSource, handleDatabaseFieldsResult } from "./renderer.js";
 import { setIndicatorChangeHandler } from "./indicators.js";
+import { resolveHostDialog } from "./hostDialogs.js";
+import { announce } from "./a11y.js";
 
 setIndicatorChangeHandler(() => refreshCanvas());
 
@@ -19,6 +21,15 @@ window.addEventListener("message", (event) => {
       break;
     case `databaseFields`:
       handleDatabaseFieldsResult(event.data);
+      break;
+    case `editFailed`:
+      announce(event.data.reason || `Edit failed`);
+      break;
+    case `requestInputResult`:
+      resolveHostDialog(event.data.requestId, event.data.value);
+      break;
+    case `requestConfirmResult`:
+      resolveHostDialog(event.data.requestId, event.data.confirmed === true);
       break;
   }
 });

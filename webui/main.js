@@ -701,7 +701,7 @@
       cell.innerText = label;
       return cell;
     };
-    const createInputCell = (fieldId, value) => {
+    const createInputCell = (fieldId, value, labelText) => {
       const cell = document.createElement(`vscode-table-cell`);
       const input = document.createElement(`code`);
       input.id = fieldId;
@@ -709,6 +709,8 @@
       input.dataset.propId = fieldId;
       input.innerText = value == null ? `` : String(value);
       input.setAttribute(`contenteditable`, `true`);
+      input.setAttribute(`role`, `textbox`);
+      input.setAttribute(`aria-label`, labelText || fieldId);
       cell.appendChild(input);
       return cell;
     };
@@ -752,7 +754,7 @@
       if (prop.id && prop.options) {
         row.append(createSelectCell(prop.id, prop.value, prop.options));
       } else if (prop.id) {
-        row.append(createInputCell(prop.id, prop.value));
+        row.append(createInputCell(prop.id, prop.value, prop.label));
       } else {
         row.append(createLabelCell(String(prop.value ?? ``)));
       }
@@ -1119,11 +1121,28 @@
     keywordEditorArea.scrollTop = 0;
   }
   function renderSections(sidebar, sections) {
+    const active = document.activeElement;
+    let focusKey;
+    if (active instanceof HTMLElement && sidebar.contains(active)) {
+      if (active.id) {
+        focusKey = { kind: `id`, value: active.id };
+      } else if (active.dataset?.propId) {
+        focusKey = { kind: `propId`, value: active.dataset.propId };
+      }
+    }
+    const openByTitle = /* @__PURE__ */ new Map();
+    sidebar.querySelectorAll(`vscode-collapsible`).forEach((el) => {
+      const title = el.getAttribute(`title`) || ``;
+      if (title) {
+        openByTitle.set(title, el.hasAttribute(`open`));
+      }
+    });
     sidebar.innerHTML = ``;
     for (let section of sections) {
       let newSection = document.createElement(`vscode-collapsible`);
       newSection.setAttribute(`title`, section.title);
-      if (section.open) {
+      const wasOpen = openByTitle.has(section.title) ? openByTitle.get(section.title) : section.open;
+      if (wasOpen) {
         newSection.setAttribute(`open`, ``);
       }
       if (typeof section.html === `string`) {
@@ -1133,6 +1152,31 @@
       }
       sidebar.appendChild(newSection);
     }
+    if (focusKey) {
+      let next = null;
+      if (focusKey.kind === `id`) {
+        next = sidebar.querySelector(`#${CSS.escape(focusKey.value)}`);
+      } else {
+        next = sidebar.querySelector(`[data-prop-id="${CSS.escape(focusKey.value)}"]`);
+      }
+      if (next instanceof HTMLElement) {
+        next.focus();
+        if (next.isContentEditable) {
+          const range = document.createRange();
+          range.selectNodeContents(next);
+          range.collapse(false);
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        }
+      }
+    }
+  }
+
+  // src/shared/recordName.ts
+  var RECORD_NAME_RE = /^[A-Z@#$][A-Z0-9@#$]{0,9}$/;
+  function isValidRecordName2(name) {
+    return RECORD_NAME_RE.test((name || ``).trim().toUpperCase());
   }
 
   // webui/src/palette.js
@@ -1262,9 +1306,6 @@
   }
   function clearDraggingField() {
     draggingField = void 0;
-  }
-  function isValidRecordName(name) {
-    return /^[A-Z@#$][A-Z0-9@#$]{0,9}$/.test((name || ``).trim().toUpperCase());
   }
   function nextAvailableRecordName(prefix, existing) {
     const upperExisting = new Set([...existing].map((n) => n.toUpperCase()));
@@ -2058,8 +2099,63 @@
     sidebar.appendChild(deleteButton);
   }
 
-  // webui/src/renderer.js
+  // webui/src/vscodeApi.js
   var vscode = acquireVsCodeApi();
+
+  // webui/src/hostDialogs.js
+  var pending = /* @__PURE__ */ new Map();
+  var nextId = 1;
+  function resolveHostDialog(requestId, value) {
+    const resolve = pending.get(requestId);
+    if (!resolve) {
+      return;
+    }
+    pending.delete(requestId);
+    resolve(value);
+  }
+  function requestHostInput(opts) {
+    const requestId = String(nextId++);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      vscode.postMessage({
+        command: `requestInput`,
+        requestId,
+        title: opts.title,
+        value: opts.value,
+        prompt: opts.prompt,
+        validate: opts.validate
+      });
+    });
+  }
+  function requestHostConfirm(opts) {
+    const requestId = String(nextId++);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      vscode.postMessage({
+        command: `requestConfirm`,
+        requestId,
+        message: opts.message,
+        confirmLabel: opts.confirmLabel
+      });
+    });
+  }
+  function showHostError(message) {
+    vscode.postMessage({ command: `showError`, message });
+  }
+
+  // webui/src/a11y.js
+  function announce(message) {
+    const el = document.getElementById(`srStatus`);
+    if (!el) {
+      return;
+    }
+    el.textContent = ``;
+    requestAnimationFrame(() => {
+      el.textContent = message || ``;
+    });
+  }
+
+  // webui/src/renderer.js
   var activeDocument = void 0;
   var activeDocumentType = `dds.dspf`;
   var lastSelectedFormat = void 0;
@@ -2078,6 +2174,7 @@
   var suppressNextBgClick = false;
   var activeWindowOrigin = void 0;
   var marqueeWindowCleanup = void 0;
+  var formatTabMenuCleanup = void 0;
   function loadDDS(newDoc, type, withRerender = true, opts = {}) {
     const prevSelection = selectedItems.map((s) => s.field.name).filter(Boolean);
     activeDocument = newDoc;
@@ -2165,6 +2262,7 @@
   function setWindowForFormat(chosenFormat) {
     let cols = 80;
     let rows = 24;
+    const formatChanged = chosenFormat !== lastSelectedFormat;
     suppressNextBgClick = false;
     if (marqueeWindowCleanup) {
       marqueeWindowCleanup();
@@ -2209,6 +2307,7 @@
     renderRows = rows;
     const width = widthInP(cols) + RULER_LEFT;
     const height = heightInP(rows) + RULER_TOP;
+    clearSelection(false);
     if (existingStage) {
       existingStage.destroy();
     }
@@ -2292,6 +2391,9 @@
         return;
       }
       const pos = existingStage.getPointerPosition();
+      if (!pos) {
+        return;
+      }
       marqueeStart = { x: pos.x, y: pos.y };
       marqueeMoved = false;
       marquee = new Konva.Rect({
@@ -2313,6 +2415,9 @@
         return;
       }
       const pos = existingStage.getPointerPosition();
+      if (!pos) {
+        return;
+      }
       const w = Math.abs(pos.x - marqueeStart.x);
       const h = Math.abs(pos.y - marqueeStart.y);
       if (w > 4 || h > 4) {
@@ -2338,7 +2443,13 @@
         return;
       }
       const raw = e.dataTransfer.getData(`application/x-dds-field`);
-      let field = raw ? JSON.parse(raw) : getDraggingField();
+      let field;
+      try {
+        field = raw ? JSON.parse(raw) : getDraggingField();
+      } catch {
+        clearDraggingField();
+        return;
+      }
       clearDraggingField();
       if (!field || !lastSelectedFormat) {
         return;
@@ -2414,7 +2525,7 @@
           addToSelection(group, field, false);
         }
       });
-      updateSelectionUi();
+      updateSelectionUi({ silent: true });
     } else if (editorMode === `design`) {
       openDesignPalette();
     } else {
@@ -2422,6 +2533,9 @@
       if (sidebar) {
         sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
       }
+    }
+    if (formatChanged) {
+      announce(`Format ${chosenFormat}`);
     }
   }
   function drawRulers(layer, cols, rows) {
@@ -2875,7 +2989,8 @@
       labelInfo.value = ``;
       padString = `R`;
     }
-    const displayLength = fieldInfo.length > 0 && labelInfo.value.length < fieldInfo.length ? fieldInfo.length : Math.max(labelInfo.value.length, 1);
+    const effectiveLength = fieldInfo.length > 0 ? fieldInfo.length : fieldInfo.resolvedLength && fieldInfo.resolvedLength > 0 ? fieldInfo.resolvedLength : 0;
+    const displayLength = effectiveLength > 0 && labelInfo.value.length < effectiveLength ? effectiveLength : Math.max(labelInfo.value.length, 1);
     const displayValue = String(labelInfo.value).replace(new RegExp(`''`, `g`), `'`).padEnd(displayLength, padString);
     boxInfo.width = widthInP(displayLength);
     if (isProtected && editorMode === `preview`) {
@@ -2979,7 +3094,7 @@
       updateSelectionUi();
     }
   }
-  function updateSelectionUi() {
+  function updateSelectionUi(opts = {}) {
     if (selectedItems.length === 1) {
       const selected = selectedItems[0];
       const originalFieldName = selected.field.name;
@@ -2989,6 +3104,9 @@
         () => sendDelete(lastSelectedFormat, originalFieldName)
       );
       prependSelectionTools(document.getElementById(`fieldInfoSidebar`), false);
+      if (!opts.silent) {
+        announce(`Selected ${selected.field.name || `constant`} at row ${selected.field.position?.y}, column ${selected.field.position?.x}`);
+      }
     } else if (selectedItems.length > 1) {
       const sidebar = document.getElementById(`fieldInfoSidebar`);
       sidebar.innerHTML = ``;
@@ -2997,6 +3115,9 @@
       count.innerText = `${selectedItems.length} fields selected`;
       sidebar.appendChild(count);
       prependSelectionTools(sidebar, true);
+      if (!opts.silent) {
+        announce(`${selectedItems.length} fields selected`);
+      }
     } else if (editorMode === `design`) {
       openDesignPalette();
     } else {
@@ -3178,9 +3299,12 @@
     for (const name of recordFormats) {
       const btn = document.createElement(`button`);
       btn.type = `button`;
+      btn.id = `format-tab-${name}`;
       btn.className = `format-tab` + (name === active ? ` active` : ``);
       btn.setAttribute(`role`, `tab`);
       btn.setAttribute(`aria-selected`, name === active ? `true` : `false`);
+      btn.setAttribute(`aria-controls`, `container`);
+      btn.tabIndex = name === active ? 0 : -1;
       btn.dataset.format = name;
       btn.textContent = name;
       btn.title = name;
@@ -3198,6 +3322,9 @@
       const isActive = el instanceof HTMLElement && el.dataset.format === formatName;
       el.classList.toggle(`active`, isActive);
       el.setAttribute(`aria-selected`, isActive ? `true` : `false`);
+      if (el instanceof HTMLElement) {
+        el.tabIndex = isActive ? 0 : -1;
+      }
       if (isActive && el instanceof HTMLElement) {
         activeBtn = el;
       }
@@ -3205,6 +3332,19 @@
     if (activeBtn && typeof activeBtn.scrollIntoView === `function`) {
       activeBtn.scrollIntoView({ inline: `nearest`, block: `nearest`, behavior: `smooth` });
     }
+    const panel = document.getElementById(`canvasTabPanel`);
+    if (panel && activeBtn?.id) {
+      panel.setAttribute(`aria-labelledby`, activeBtn.id);
+    }
+  }
+  function activateFormatTab(formatName) {
+    if (!formatName || formatName === lastSelectedFormat) {
+      return;
+    }
+    overlayFormats = [];
+    clearAllIndicators();
+    clearKeywordEditor();
+    setWindowForFormat(formatName);
   }
   function setupTabsHandler() {
     const tabs = document.getElementById(`recordFormatTabs`);
@@ -3217,20 +3357,68 @@
         return;
       }
       const btn = target.closest(`.format-tab`);
-      if (!btn || !tabs.contains(btn)) {
+      if (!btn || !tabs.contains(btn) || !(btn instanceof HTMLElement)) {
         return;
       }
       const formatName = btn.dataset.format;
       if (!formatName) {
         return;
       }
-      if (formatName === lastSelectedFormat) {
+      activateFormatTab(formatName);
+    });
+    tabs.addEventListener(`keydown`, (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains(`format-tab`)) {
         return;
       }
-      overlayFormats = [];
-      clearAllIndicators();
-      clearKeywordEditor();
-      setWindowForFormat(formatName);
+      const buttons = [...tabs.querySelectorAll(`.format-tab`)].filter(
+        (el) => el instanceof HTMLElement
+      );
+      if (buttons.length === 0) {
+        return;
+      }
+      const currentIndex = buttons.indexOf(target);
+      if (currentIndex < 0) {
+        return;
+      }
+      let nextIndex = -1;
+      switch (event.key) {
+        case `ArrowLeft`:
+          nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+          break;
+        case `ArrowRight`:
+          nextIndex = (currentIndex + 1) % buttons.length;
+          break;
+        case `Home`:
+          nextIndex = 0;
+          break;
+        case `End`:
+          nextIndex = buttons.length - 1;
+          break;
+        case `ContextMenu`:
+          event.preventDefault();
+          if (editsAllowed() && target.dataset.format) {
+            const rect = target.getBoundingClientRect();
+            showFormatTabMenu(rect.left, rect.bottom, target.dataset.format);
+          }
+          return;
+        case `F10`:
+          if (event.shiftKey && editsAllowed() && target.dataset.format) {
+            event.preventDefault();
+            const rect = target.getBoundingClientRect();
+            showFormatTabMenu(rect.left, rect.bottom, target.dataset.format);
+          }
+          return;
+        default:
+          return;
+      }
+      event.preventDefault();
+      const next = buttons[nextIndex];
+      if (!(next instanceof HTMLElement) || !next.dataset.format) {
+        return;
+      }
+      next.focus();
+      activateFormatTab(next.dataset.format);
     });
     tabs.addEventListener(`contextmenu`, (event) => {
       const target = event.target;
@@ -3250,6 +3438,10 @@
     });
   }
   function showFormatTabMenu(x, y, formatName) {
+    if (formatTabMenuCleanup) {
+      formatTabMenuCleanup();
+      formatTabMenuCleanup = void 0;
+    }
     document.getElementById(`formatTabMenu`)?.remove();
     const menu = document.createElement(`div`);
     menu.id = `formatTabMenu`;
@@ -3262,13 +3454,22 @@
       item.className = `format-tab-menu-item`;
       item.textContent = label;
       item.onclick = () => {
+        if (formatTabMenuCleanup) {
+          formatTabMenuCleanup();
+          formatTabMenuCleanup = void 0;
+        }
         menu.remove();
         onClick();
       };
       menu.appendChild(item);
     };
-    addItem(`Rename\u2026`, () => {
-      const next = window.prompt(`Rename record format`, formatName);
+    addItem(`Rename\u2026`, async () => {
+      const next = await requestHostInput({
+        title: `Rename record format`,
+        value: formatName,
+        prompt: `New name for ${formatName}`,
+        validate: `recordName`
+      });
       if (!next) {
         return;
       }
@@ -3276,10 +3477,21 @@
       if (name === formatName.toUpperCase()) {
         return;
       }
+      if (!isValidRecordName2(name)) {
+        showHostError(`Invalid record name. Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $.`);
+        return;
+      }
+      const taken = (activeDocument?.formats || []).some(
+        (f) => f.name && f.name.toUpperCase() === name && f.name.toUpperCase() !== formatName.toUpperCase()
+      );
+      if (taken) {
+        showHostError(`Record format ${name} already exists.`);
+        return;
+      }
       lastSelectedFormat = name;
       vscode.postMessage({ command: `renameFormat`, recordFormat: formatName, newName: name });
     });
-    addItem(`Copy\u2026`, () => {
+    addItem(`Copy\u2026`, async () => {
       const existing = new Set(
         (activeDocument?.formats || []).map((f) => f.name.toUpperCase()).filter(Boolean)
       );
@@ -3292,16 +3504,33 @@
         }
         return `${formatName}2`.substring(0, 10);
       })();
-      const next = window.prompt(`Copy record as`, suggestion);
+      const next = await requestHostInput({
+        title: `Copy record as`,
+        value: suggestion,
+        prompt: `Name for the copy of ${formatName}`,
+        validate: `recordName`
+      });
       if (!next) {
         return;
       }
       const name = next.trim().toUpperCase();
+      if (!isValidRecordName2(name)) {
+        showHostError(`Invalid record name. Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $.`);
+        return;
+      }
+      if (existing.has(name)) {
+        showHostError(`Record format ${name} already exists.`);
+        return;
+      }
       lastSelectedFormat = name;
       vscode.postMessage({ command: `copyFormat`, recordFormat: formatName, newName: name });
     });
-    addItem(`Delete`, () => {
-      if (!window.confirm(`Delete record format ${formatName}?`)) {
+    addItem(`Delete`, async () => {
+      const confirmed = await requestHostConfirm({
+        message: `Delete record format ${formatName}?`,
+        confirmLabel: `Delete`
+      });
+      if (!confirmed) {
         return;
       }
       const others = (activeDocument?.formats || []).map((f) => f.name).filter((n) => n && n !== GLOBAL_RECORD_FORMAT && n !== formatName);
@@ -3315,9 +3544,22 @@
       }
       menu.remove();
       document.removeEventListener(`mousedown`, close, true);
+      formatTabMenuCleanup = void 0;
+    };
+    formatTabMenuCleanup = () => {
+      menu.remove();
+      document.removeEventListener(`mousedown`, close, true);
+      formatTabMenuCleanup = void 0;
     };
     setTimeout(() => document.addEventListener(`mousedown`, close, true), 0);
   }
+  var EDITING_VSCODE_TAGS = /* @__PURE__ */ new Set([
+    `vscode-textfield`,
+    `vscode-textarea`,
+    `vscode-single-select`,
+    `vscode-multi-select`,
+    `vscode-checkbox`
+  ]);
   function isEditingUiTarget() {
     const el = document.activeElement;
     if (!el) {
@@ -3330,10 +3572,10 @@
     if (el.isContentEditable) {
       return true;
     }
-    if (tag && tag.startsWith(`vscode-`)) {
+    if (tag && EDITING_VSCODE_TAGS.has(tag)) {
       return true;
     }
-    if (el.closest && el.closest(`vscode-textfield, vscode-single-select, vscode-checkbox, vscode-form-group, #screenSizeSelect`)) {
+    if (el.closest && el.closest(`vscode-textfield, vscode-textarea, vscode-single-select, vscode-multi-select, vscode-checkbox, #screenSizeSelect`)) {
       return true;
     }
     return false;
@@ -3352,12 +3594,53 @@
     }
     return `F${Date.now()}`.substring(0, 10);
   }
+  var nudgeTimer = void 0;
+  var pendingNudge = void 0;
+  function flushPendingNudge() {
+    if (nudgeTimer) {
+      clearTimeout(nudgeTimer);
+      nudgeTimer = void 0;
+    }
+    if (!pendingNudge) {
+      return;
+    }
+    const { recordFormat, updates } = pendingNudge;
+    pendingNudge = void 0;
+    sendFieldsUpdate(recordFormat, updates);
+    if (updates.length === 1) {
+      const pos = updates[0].fieldInfo?.position;
+      if (pos) {
+        announce(`Moved to row ${pos.y}, column ${pos.x}`);
+      }
+    } else if (updates.length > 1) {
+      announce(`Moved ${updates.length} fields`);
+    }
+  }
+  function scheduleNudgeUpdate(recordFormat, updates) {
+    pendingNudge = { recordFormat, updates };
+    if (nudgeTimer) {
+      clearTimeout(nudgeTimer);
+    }
+    nudgeTimer = setTimeout(() => {
+      nudgeTimer = void 0;
+      flushPendingNudge();
+    }, 60);
+  }
   function setupKeyboard() {
     window.addEventListener(`keydown`, (e) => {
       if (!editsAllowed()) {
         return;
       }
       if (isEditingUiTarget()) {
+        return;
+      }
+      if (e.key === `Escape`) {
+        if (selectedItems.length > 0) {
+          e.preventDefault();
+          clearSelection(true);
+          document.getElementById(`container`)?.focus();
+          announce(`Selection cleared`);
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === `c`) {
@@ -3371,19 +3654,31 @@
         if (clipboard.length > 0 && lastSelectedFormat) {
           const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
           const existing = new Set((format?.fields || []).map((f) => f.name));
-          clipboard.forEach((field) => {
+          const fields = clipboard.map((field) => {
             const copy = JSON.parse(JSON.stringify(field));
             copy.position = { x: field.position.x, y: Math.min(renderRows, field.position.y + 1) };
             const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
             copy.name = uniqueFieldName(`${base}_C`, existing);
             existing.add(copy.name);
-            sendNewField(lastSelectedFormat, copy);
+            return copy;
           });
+          sendNewFields(lastSelectedFormat, fields);
           e.preventDefault();
         }
         return;
       }
       if (selectedItems.length === 0) {
+        const container = document.getElementById(`container`);
+        const focusInCanvas = container && (document.activeElement === container || container.contains(document.activeElement));
+        if (!focusInCanvas) {
+          return;
+        }
+        const selectFirst = e.key === `Enter` || e.key === `Tab` || e.key === `ArrowLeft` || e.key === `ArrowRight` || e.key === `ArrowUp` || e.key === `ArrowDown`;
+        if (!selectFirst) {
+          return;
+        }
+        e.preventDefault();
+        selectFirstVisibleField();
         return;
       }
       if (e.key === `Delete` || e.key === `Backspace`) {
@@ -3391,7 +3686,15 @@
         if (names.length === 1) {
           sendDelete(lastSelectedFormat, names[0]);
         } else if (names.length > 1) {
-          sendDeleteFields(lastSelectedFormat, names);
+          void (async () => {
+            const confirmed = await requestHostConfirm({
+              message: `Delete ${names.length} selected fields?`,
+              confirmLabel: `Delete`
+            });
+            if (confirmed) {
+              sendDeleteFields(lastSelectedFormat, names);
+            }
+          })();
         }
         e.preventDefault();
         return;
@@ -3436,24 +3739,62 @@
           return;
       }
       e.preventDefault();
-      const updates = selectedItems.map(({ field }) => {
-        const next = {
-          ...field,
-          position: {
-            x: Math.min(renderCols, Math.max(1, field.position.x + dx)),
-            y: Math.min(renderRows, Math.max(1, field.position.y + dy))
-          }
+      const updates = selectedItems.map(({ field, group }) => {
+        const nextPos = {
+          x: Math.min(renderCols, Math.max(1, field.position.x + dx)),
+          y: Math.min(renderRows, Math.max(1, field.position.y + dy))
         };
-        return { originalFieldName: field.name, fieldInfo: next };
+        field.position = nextPos;
+        if (group) {
+          group.absolutePosition({
+            x: (nextPos.x - 1) * pxwPerChar + RULER_LEFT,
+            y: (nextPos.y - 1) * pxhPerLine + RULER_TOP
+          });
+        }
+        return {
+          originalFieldName: field.name,
+          fieldInfo: { ...field, position: { ...nextPos } }
+        };
       });
-      sendFieldsUpdate(lastSelectedFormat, updates);
+      fieldLayer?.batchDraw();
+      scheduleNudgeUpdate(lastSelectedFormat, updates);
     });
+  }
+  function selectFirstVisibleField() {
+    if (!activeDocument || !lastSelectedFormat) {
+      return;
+    }
+    const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
+    if (!format) {
+      return;
+    }
+    const visible = format.fields.filter((f) => f.displayType !== `hidden`);
+    if (visible.length === 0) {
+      announce(`No fields on ${lastSelectedFormat}`);
+      return;
+    }
+    const first = visible[0];
+    const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === first.name) || [];
+    const group = matches[0];
+    if (group) {
+      setActiveField(group, first);
+    }
   }
   function sendNewField(recordFormat, fieldInfo) {
     if (!editsAllowed()) {
       return;
     }
     vscode.postMessage({ command: `newField`, recordFormat, fieldInfo });
+  }
+  function sendNewFields(recordFormat, fields) {
+    if (!editsAllowed() || !fields?.length) {
+      return;
+    }
+    if (fields.length === 1) {
+      sendNewField(recordFormat, fields[0]);
+      return;
+    }
+    vscode.postMessage({ command: `newFields`, recordFormat, fields });
   }
   function sendDelete(recordFormat, fieldName) {
     if (!editsAllowed()) {
@@ -3536,11 +3877,11 @@
       return;
     }
     if (payload.error) {
-      window.alert(payload.error);
+      showHostError(payload.error);
       return;
     }
     if (!payload.fields?.length) {
-      window.alert(`No fields returned.`);
+      showHostError(`No fields returned.`);
       return;
     }
     const sidebar = document.getElementById(`fieldInfoSidebar`);
@@ -3701,6 +4042,15 @@
         break;
       case `databaseFields`:
         handleDatabaseFieldsResult(event.data);
+        break;
+      case `editFailed`:
+        announce(event.data.reason || `Edit failed`);
+        break;
+      case `requestInputResult`:
+        resolveHostDialog(event.data.requestId, event.data.value);
+        break;
+      case `requestConfirmResult`:
+        resolveHostDialog(event.data.requestId, event.data.confirmed === true);
         break;
     }
   });

@@ -2,6 +2,13 @@ import * as vscode from "vscode";
 
 const CODE_FOR_IBMI_ID = `halcyontechltd.code-for-ibmi`;
 
+/**
+ * IBM i system-object name (aka "short name"): 1–10 characters,
+ * starting with A–Z / @ / # / $ and continuing with A–Z / 0–9 / @ / # / $.
+ * Used to validate library and file names before we build SQL against QSYS2.SYSCOLUMNS.
+ */
+const IBMI_IDENTIFIER = /^[A-Z@#$][A-Z0-9@#$]{0,9}$/;
+
 export type DbFieldDef = {
   name: string;
   type: string;
@@ -11,6 +18,10 @@ export type DbFieldDef = {
 };
 
 type SqlRow = Record<string, unknown>;
+
+export function isIbmiConnectedForSql(): boolean {
+  return !!getIbmiContent()?.runSQL;
+}
 
 function getIbmiContent(): { runSQL?: (sql: string) => Promise<SqlRow[]> } | undefined {
   const ext = vscode.extensions.getExtension<{
@@ -30,6 +41,10 @@ function getIbmiContent(): { runSQL?: (sql: string) => Promise<SqlRow[]> } | und
       : undefined) ||
     (typeof instance.getContent === `function` ? instance.getContent() : undefined);
   return content as { runSQL?: (sql: string) => Promise<SqlRow[]> } | undefined;
+}
+
+function isValidIbmiIdentifier(value: string): boolean {
+  return IBMI_IDENTIFIER.test((value || ``).trim().toUpperCase());
 }
 
 function mapSqlType(dataType: string, length: number, scale: number): { type: string; length: number; decimals: number } {
@@ -75,7 +90,16 @@ export async function browseDatabaseFieldsInteractive(
       title: `Database library`,
       prompt: `Library containing the physical/logical file`,
       value: defaults?.library || ``,
-      validateInput: (v) => (v.trim() ? undefined : `Library is required`),
+      validateInput: (v) => {
+        const t = v.trim().toUpperCase();
+        if (!t) {
+          return `Library is required`;
+        }
+        if (!isValidIbmiIdentifier(t)) {
+          return `Invalid library name (1–10 chars, A–Z @ # $)`;
+        }
+        return undefined;
+      },
     })
   )?.trim().toUpperCase();
   if (!library) {
@@ -87,11 +111,34 @@ export async function browseDatabaseFieldsInteractive(
       title: `Database file`,
       prompt: `Physical or logical file name`,
       value: defaults?.file || ``,
-      validateInput: (v) => (v.trim() ? undefined : `File is required`),
+      validateInput: (v) => {
+        const t = v.trim().toUpperCase();
+        if (!t) {
+          return `File is required`;
+        }
+        if (!isValidIbmiIdentifier(t)) {
+          return `Invalid file name (1–10 chars, A–Z @ # $)`;
+        }
+        return undefined;
+      },
     })
   )?.trim().toUpperCase();
   if (!file) {
     return undefined;
+  }
+
+  // Defense-in-depth: the input-box validators already reject invalid names,
+  // but we re-check before touching SQL so a future validator regression cannot
+  // produce an unsafe query. Combined with the single-quote escape below this
+  // keeps QSYS2.SYSCOLUMNS access free of injection risk.
+  if (!isValidIbmiIdentifier(library) || !isValidIbmiIdentifier(file)) {
+    return {
+      library,
+      file,
+      recordFormat: file,
+      fields: [],
+      error: `Invalid library or file name`,
+    };
   }
 
   try {
@@ -114,7 +161,10 @@ export async function browseDatabaseFieldsInteractive(
     }
 
     const fields: DbFieldDef[] = rows.map((row) => {
-      const name = String(row.COLUMN_NAME || row.SYSTEM_COLUMN_NAME || ``).trim().toUpperCase();
+      const systemName = String(row.SYSTEM_COLUMN_NAME || ``).trim().toUpperCase();
+      const sqlName = String(row.COLUMN_NAME || ``).trim().toUpperCase();
+      // Prefer system (DDS) name when present; SQL long names are truncated poorly for REFFLD.
+      const name = (systemName || sqlName).substring(0, 10);
       const dataType = String(row.DATA_TYPE || `CHARACTER`);
       const length = Number(row.LENGTH) || 10;
       const scale = Number(row.NUMERIC_SCALE) || 0;
@@ -123,7 +173,7 @@ export async function browseDatabaseFieldsInteractive(
         ? String(row.COLUMN_HEADING).trim()
         : undefined;
       return {
-        name: name.substring(0, 10),
+        name,
         type: mapped.type,
         length: mapped.length,
         decimals: mapped.decimals,
@@ -135,5 +185,83 @@ export async function browseDatabaseFieldsInteractive(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { library, file, recordFormat: file, fields: [], error: msg };
+  }
+}
+
+/**
+ * Fetch every column of a database file via SYSCOLUMNS, keyed by uppercase
+ * system (DDS) name. Used to resolve the *length* of reference fields declared
+ * in DDS source with a blank length column so the designer can render them at
+ * their true width. The library defaults to `*LIBL` (JOB's library list) when
+ * only a file name is available.
+ *
+ * Returns `undefined` when Code for IBM i is not connected or the query fails,
+ * so callers can gracefully fall back to the parsed length.
+ */
+export async function fetchFileFieldsByName(
+  library: string | undefined,
+  file: string
+): Promise<Map<string, DbFieldDef> | undefined> {
+  const content = getIbmiContent();
+  if (!content?.runSQL) {
+    return undefined;
+  }
+
+  const fileName = (file || ``).trim().toUpperCase();
+  if (!isValidIbmiIdentifier(fileName)) {
+    return undefined;
+  }
+
+  const libName = (library || ``).trim().toUpperCase();
+  // `*LIBL`, `*CURLIB`, and other IBM specials aren't valid schemas for
+  // SYSCOLUMNS; treat them as "no library filter" and let SYSCOLUMNS return
+  // matches from any accessible schema.
+  const useLibrary = libName && isValidIbmiIdentifier(libName) ? libName : ``;
+
+  try {
+    const whereLib = useLibrary
+      ? `TABLE_SCHEMA = '${useLibrary.replace(/'/g, `''`)}' AND `
+      : ``;
+    const rows = await content.runSQL(
+      `SELECT COLUMN_NAME, DATA_TYPE, LENGTH, NUMERIC_SCALE, COLUMN_HEADING, SYSTEM_COLUMN_NAME ` +
+        `FROM QSYS2.SYSCOLUMNS ` +
+        `WHERE ${whereLib}TABLE_NAME = '${fileName.replace(/'/g, `''`)}' ` +
+        `ORDER BY ORDINAL_POSITION`
+    );
+
+    if (!rows?.length) {
+      return new Map();
+    }
+
+    const map = new Map<string, DbFieldDef>();
+    for (const row of rows) {
+      const systemName = String(row.SYSTEM_COLUMN_NAME || ``).trim().toUpperCase();
+      const sqlName = String(row.COLUMN_NAME || ``).trim().toUpperCase();
+      const name = (systemName || sqlName).substring(0, 10);
+      if (!name) {
+        continue;
+      }
+      const dataType = String(row.DATA_TYPE || `CHARACTER`);
+      const length = Number(row.LENGTH) || 10;
+      const scale = Number(row.NUMERIC_SCALE) || 0;
+      const mapped = mapSqlType(dataType, length, scale);
+      const heading = row.COLUMN_HEADING !== null && row.COLUMN_HEADING !== undefined
+        ? String(row.COLUMN_HEADING).trim()
+        : undefined;
+      // First match wins — SYSCOLUMNS may return the same field name from
+      // multiple libraries if no schema filter was provided.
+      if (!map.has(name)) {
+        map.set(name, {
+          name,
+          type: mapped.type,
+          length: mapped.length,
+          decimals: mapped.decimals,
+          heading: heading || undefined,
+        });
+      }
+    }
+    return map;
+  } catch {
+    return undefined;
   }
 }

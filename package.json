@@ -2,7 +2,7 @@
   "name": "vscode-ibmi-renderer",
   "displayName": "IBM i Display File Designer",
   "description": "Visual designer for IBM i display and printer files (DDS)",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "publisher": "halcyontechltd",
   "license": "MIT",
   "repository": {
@@ -160,6 +160,7 @@
     "build:tsc": "tsc --noEmit --project tsconfig.json",
     "getTsTypesForFile": "tsc --declaration --emitDeclarationOnly --outDir types && cp types/ui/dspf.d.ts webui/dspf.d.ts",
     "package": "npm run build:frontend && npm run check-types && npm run lint && node esbuild.js --production",
+    "vsix": "vsce package --out vscode-ibmi-renderer.vsix",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run"
@@ -171,16 +172,17 @@
     "@typescript-eslint/parser": "^8.22.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.24.2",
     "eslint": "^9.19.0",
     "npm-run-all": "^4.1.5",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.0"
   },
   "dependencies": {
     "@vscode-elements/elements": "^1.15.0",
     "@vscode/codicons": "^0.0.36",
-    "konva": "^9.3.20",
-    "vitest": "^3.2.0"
+    "konva": "^9.3.20"
   },
   "allowScripts": {
     "esbuild@0.24.2": true,

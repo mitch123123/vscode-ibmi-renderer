@@ -205,7 +205,30 @@ body {
 .prop-input {
   display: inline-block;
   min-width: 4em;
-  outline: none;
+}
+
+.format-tab:focus-visible,
+.field-list-item:focus-visible,
+.prop-input:focus-visible,
+.sidebar-collapse-btn:focus-visible,
+.sidebar-rail:focus-visible,
+.view-switch-btn:focus-visible,
+#container:focus-visible,
+#screenSizeSelect:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .palette-heading {

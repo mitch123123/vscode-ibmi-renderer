@@ -192,6 +192,34 @@ describe('DisplayFile tests', () => {
     expect(field).toBeDefined();
     expect(field?.isReference).toBe(true);
     expect(field?.reference).toBe(`NAME CUSTFILE`);
+    // Blank length column parses to a falsy value so getLinesForField keeps
+    // the source column blank on round-trip. The exact numeric (0 vs NaN)
+    // depends on whether the R is at DDS col 35; only truthiness matters.
+    expect(field?.length).toBeFalsy();
+  });
+
+  it('preserves blank length column on ref-field round-trip even with resolvedLength set', () => {
+    // Properly aligned: R at DDS column 35 (index 34), length columns 30-34
+    // (indexes 29-33) blank. That means 8 spaces between the end of the
+    // 8-char name CUSTNAME and R (2 name-padding + 1 col-29 + 5 length).
+    const lines: string[] = [
+      `     A          R FORM1`,
+      `     A            CUSTNAME        R  O  2  5`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const field = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `CUSTNAME`)!;
+    expect(field.isReference).toBe(true);
+    expect(field.length).toBeFalsy();
+
+    // Simulate host-side resolution against SYSCOLUMNS.
+    field.resolvedLength = 30;
+    const generated = DisplayFile.getLinesForField(field);
+    // Length column (idx 29-33) must stay blank — resolvedLength is a
+    // render-only hint and must not leak into the DDS output.
+    expect(generated[0].substring(29, 34)).toBe(`     `);
+    // Type column (idx 34) is still R.
+    expect(generated[0][34]).toBe(`R`);
   });
 
   it('parses printer-style X-only positions', () => {
@@ -408,15 +436,25 @@ describe('DisplayFile tests', () => {
     const dds = new DisplayFile();
     dds.parse(lines);
 
-    const renamed = dds.renameFormat(`SFL01`, `SFL99`)!;
-    expect(renamed.newLines.some(l => /R\s+SFL99/.test(l))).toBe(true);
-    expect(renamed.newLines.some(l => l.includes(`SFLCTL(SFL99)`))).toBe(true);
-    expect(renamed.newLines.some(l => l.includes(`SFLCTL(SFL01)`))).toBe(false);
+    const renamed = dds.renameFormat(`sfl01`, `SFL99`)!;
+    expect(renamed.length).toBe(2);
+    expect(renamed.every((u) => u.range && u.range.start === u.range.end)).toBe(true);
+    expect(renamed[0].newLines[0]).toMatch(/R\s+SFL99/);
+    expect(renamed.some((u) => u.newLines[0].includes(`SFLCTL(SFL99)`))).toBe(true);
+    let afterRename = [...lines];
+    for (const u of [...renamed].sort((a, b) => b.range!.start - a.range!.start)) {
+      afterRename = dds.applyUpdateToLines(afterRename, u);
+    }
+    expect(afterRename.some((l) => /R\s+SFL99/.test(l))).toBe(true);
+    expect(afterRename.some((l) => l.includes(`SFLCTL(SFL99)`))).toBe(true);
+    expect(afterRename.some((l) => l.includes(`SFLCTL(SFL01)`))).toBe(false);
+    expect(afterRename.length).toBe(lines.length);
 
     const dds2 = new DisplayFile();
     dds2.parse(lines);
-    const copied = dds2.copyFormat(`HEAD`, `HEAD2`)!;
+    const copied = dds2.copyFormat(`head`, `HEAD2`)!;
     expect(copied.newLines[0]).toMatch(/R\s+HEAD2/);
+    expect(copied.range!.end).toBe(copied.range!.start - 1);
     const afterCopy = dds2.applyUpdateToLines(lines, copied);
     expect(afterCopy.some(l => /R\s+HEAD2/.test(l))).toBe(true);
 
@@ -428,6 +466,72 @@ describe('DisplayFile tests', () => {
     const afterDel = dds3.applyUpdateToLines(lines, del);
     expect(afterDel.some(l => /R\s+HEAD\b/.test(l))).toBe(false);
     expect(afterDel.some(l => /R\s+SFL01/.test(l))).toBe(true);
+  });
+
+  it('renameFormat returns only the R-line when nothing references it', () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A                                  1  2'Hi'`,
+      `     A          R BODY`,
+      `     A            F1             5A  O  1  2`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const renamed = dds.renameFormat(`HEAD`, `TITLE`)!;
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0].range).toEqual({ start: 0, end: 0 });
+    expect(renamed[0].newLines[0]).toMatch(/R\s+TITLE/);
+  });
+
+  it('deleteFormat blocks when SFLCTL still references the format', () => {
+    const lines = [
+      `     A          R SFL01`,
+      `     A                                      SFL`,
+      `     A            F1             5A  O  1  2`,
+      `     A          R CTL01`,
+      `     A                                      SFLCTL(SFL01)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    expect(dds.formatsReferencing(`SFL01`)).toEqual([`CTL01`]);
+    expect(dds.deleteFormat(`SFL01`)).toBeUndefined();
+    expect(dds.deleteFormat(`CTL01`)).toBeDefined();
+  });
+
+  it('retargetFormatRefsInLine escapes regex special chars in names', () => {
+    const line = `     A                                      SFLCTL($SFL1)`;
+    const next = DisplayFile.retargetFormatRefsInLine(line, `$SFL1`, `$SFL2`);
+    expect(next).toContain(`SFLCTL($SFL2)`);
+    expect(next).not.toContain(`SFLCTL($SFL1)`);
+  });
+
+  it('applyUpdateToLines replaces a single-line field without duplicating', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD001        10A  O  2  5`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `FLD001`)!;
+    fld.length = 12;
+    const update = dds.updateField(`FORM1`, `FLD001`, fld)!;
+    expect(update.range!.start).toBe(update.range!.end);
+    const next = dds.applyUpdateToLines(lines, update);
+    expect(next.filter(l => l.includes(`FLD001`)).length).toBe(1);
+    expect(next.some(l => l.includes(`12A`))).toBe(true);
+    expect(next.length).toBe(2);
+  });
+
+  it('applyUpdateToLines deletes a single-line format', () => {
+    const lines = [
+      `     A          R ONLY`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const del = dds.deleteFormat(`ONLY`)!;
+    expect(del.range!.start).toBe(del.range!.end);
+    const next = dds.applyUpdateToLines(lines, del);
+    expect(next).toEqual([]);
   });
 
   it('updateField with unknown name does not insert', () => {
@@ -464,6 +568,7 @@ describe('DisplayFile tests', () => {
     newField.position = { x: 1, y: 2 };
     const update = dds.updateField(`FORM1`, undefined, newField)!;
     expect(update.range!.start).toBe(form1.range.end);
+    expect(update.range!.end).toBe(form1.range.end - 1);
     const next = dds.applyUpdateToLines(lines, update);
     expect(next.filter(l => l.includes(`R FORM2`)).length).toBe(1);
     expect(next.some(l => l.includes(`NEW1`))).toBe(true);
