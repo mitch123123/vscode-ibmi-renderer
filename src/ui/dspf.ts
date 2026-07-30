@@ -139,7 +139,12 @@ export class DisplayFile {
             if (this.currentField) {
               this.currentField.name = name;
               this.currentField.value = "";
-              this.currentField.length = Number(len);
+              // Leave length undefined when the DDS length column is blank so
+              // re-emit does not invent `0` (which would corrupt cols 30-34).
+              const parsedLen = len !== `` ? Number(len) : undefined;
+              this.currentField.length = parsedLen !== undefined && !Number.isNaN(parsedLen)
+                ? parsedLen
+                : undefined;
               switch (inout) {
                 case "I":
                   this.currentField.displayType = `input`;
@@ -150,9 +155,19 @@ export class DisplayFile {
                 case "H":
                   this.currentField.displayType = `hidden`;
                   break;
+                case "M":
+                  this.currentField.displayType = `message`;
+                  break;
+                case "P":
+                  this.currentField.displayType = `program`;
+                  break;
                 case " ":
                 case "O":
                   this.currentField.displayType = `output`;
+                  break;
+                default:
+                  // Unknown usage — keep the raw col-38 char so emit never drops the line.
+                  this.currentField.rawUsage = inout;
                   break;
               }
 
@@ -217,6 +232,14 @@ export class DisplayFile {
               }
             }
             this.HandleKeywords(keywords, conditionals, index);
+          }
+          break;
+
+        default:
+          // H / J / K / O (and any other non-blank col-17) are not modeled.
+          // Keep them as passthrough so header/field rewrites cannot destroy them.
+          if (this.currentRecord) {
+            this.currentRecord.passthroughLines.push({ lineIndex: index, text: originalLine });
           }
           break;
       }
@@ -302,19 +325,35 @@ export class DisplayFile {
     return found;
   }
 
+  /**
+   * Force a value into an exact DDS column width so overflow can never shift
+   * subsequent columns. Truncates on the left for right-aligned numeric fields
+   * (length / row / col) and on the right for left-aligned names.
+   */
+  static fitColumn(value: string | number | undefined | null, width: number, align: `left` | `right` = `left`, pad = ` `): string {
+    const s = String(value ?? ``);
+    if (s.length > width) {
+      return align === `right` ? s.slice(s.length - width) : s.slice(0, width);
+    }
+    return align === `right` ? s.padStart(width, pad) : s.padEnd(width, pad);
+  }
+
   /** Format one indicator as a 3-char IBM slot: " 05" or "N20" */
   static formatIndicatorSlot(c: Conditional): string {
-    const num = String(c.indicator).padStart(2, `0`);
+    const num = DisplayFile.fitColumn(String(c.indicator), 2, `right`, `0`);
     return `${c.negate ? `N` : ` `}${num}`;
   }
 
   /** 9 chars after `A` covering cols 8-16 (col7 left as space via `A ` prefix). */
   static formatConditionString(conditions: Conditional[]): string {
-    return conditions
-      .slice(0, 3)
-      .map(c => DisplayFile.formatIndicatorSlot(c))
-      .join(``)
-      .padEnd(9);
+    return DisplayFile.fitColumn(
+      conditions
+        .slice(0, 3)
+        .map(c => DisplayFile.formatIndicatorSlot(c))
+        .join(``),
+      9,
+      `left`,
+    );
   }
 
   static parseKeywords(keywordStrings: string[], conditionalStrings?: { [line: number]: string }) {
@@ -424,8 +463,12 @@ export class DisplayFile {
     const condition = this.conditionalGroups(keyword.conditions);
     const firstConditions = condition[0] || [];
     const conditionStrings = DisplayFile.formatConditionString(firstConditions);
+    // Cols 45-80 = 36 chars for the keyword/function area. Truncate only —
+    // do not right-pad, so short keywords stay identical to historical output.
+    const rawKeyword = `${keyword.name}${keyword.value ? `(${keyword.value})` : ``}`;
+    const keywordText = rawKeyword.length > 36 ? rawKeyword.slice(0, 36) : rawKeyword;
 
-    lines.push(`     A ${conditionStrings}                            ${keyword.name}${keyword.value ? `(${keyword.value})` : ``}`);
+    lines.push(`     A ${conditionStrings}                            ${keywordText}`);
 
     for (let g = 1; g < condition.length; g++) {
       const group = condition[g];
@@ -444,16 +487,27 @@ export class DisplayFile {
       input: "I",
       output: "O",
       const: "",
-      hidden: "H"
+      hidden: "H",
+      message: "M",
+      program: "P",
     };
 
-    const x = String(field.position.x).padStart(3, ` `);
-    const y = String(field.position.y).padStart(3, ` `);
-    const displayType = FIELD_TYPE[field.displayType!];
+    // y === 0 means printer-style "row column blank" — emit three spaces, never `0`.
+    const x = DisplayFile.fitColumn(field.position.x, 3, `right`);
+    const y = field.position.y === 0
+      ? `   `
+      : DisplayFile.fitColumn(field.position.y, 3, `right`);
+    const mappedUsage = field.displayType ? FIELD_TYPE[field.displayType] : undefined;
+    // Prefer a known mapping; otherwise preserve the raw col-38 char so we never
+    // drop a named field's definition line for an unrecognized usage.
+    const usageChar = mappedUsage !== undefined
+      ? mappedUsage
+      : (field.rawUsage && field.rawUsage.length > 0 ? field.rawUsage[0] : ` `);
 
     const condition = this.conditionalGroups(field.conditions);
     const firstConditions = condition[0] || [];
     const conditionStrings = DisplayFile.formatConditionString(firstConditions);
+    const nameCol = DisplayFile.fitColumn(field.name || ``, 10, `left`);
 
     if (field.displayType === `const`) {
       const value = field.value;
@@ -461,19 +515,27 @@ export class DisplayFile {
         `     A ${conditionStrings}                      ${y}${x}'${value}'`,
       );
     } else if (field.isReference && field.name) {
-      const length = field.length ? String(field.length).padStart(5) : `     `;
+      const length = field.length !== undefined && field.length !== null && field.length !== 0
+        ? DisplayFile.fitColumn(field.length, 5, `right`)
+        : `     `;
       newLines.push(
-        `     A ${conditionStrings}  ${field.name.padEnd(10)} ${length}R  ${displayType || ' '}${y}${x}`,
+        `     A ${conditionStrings}  ${nameCol} ${length}R  ${usageChar || ' '}${y}${x}`,
       );
-    } else if (displayType !== undefined && field.name) {
+    } else if (field.name) {
       // Preserve blank type as spaces — never invent A/0 for typeless fields
       const hasType = !!(field.type && field.type.trim());
-      const definitionType = hasType ? field.type! : ` `;
-      const length = String(field.length).padStart(5);
+      const definitionType = hasType ? field.type![0] : ` `;
+      const length = field.length !== undefined && field.length !== null
+        ? DisplayFile.fitColumn(field.length, 5, `right`)
+        : `     `;
       const emitDecimals = hasType && NUMERIC_TYPES.has(field.type!.toUpperCase());
-      const decimals = (emitDecimals ? String(field.decimals) : ``).padStart(2);
+      const decimals = DisplayFile.fitColumn(
+        emitDecimals ? String(field.decimals ?? 0) : ``,
+        2,
+        `right`,
+      );
       newLines.push(
-        `     A ${conditionStrings}  ${field.name.padEnd(10)} ${length}${definitionType}${decimals}${displayType}${y}${x}`,
+        `     A ${conditionStrings}  ${nameCol} ${length}${definitionType}${decimals}${usageChar}${y}${x}`,
       );
     }
 
@@ -612,7 +674,8 @@ export class DisplayFile {
     const lines: string[] = [];
 
     if (recordFormat && recordFormat !== GLOBAL_RECORD_NAME) {
-      lines.push(`     A          R ${recordFormat}`);
+      const name = DisplayFile.fitColumn(recordFormat, 10, `left`).trimEnd();
+      lines.push(`     A          R ${name}`);
     }
 
     for (const keyword of keywords) {
@@ -897,9 +960,9 @@ export class DisplayFile {
     if (padded.length > 18 && padded[16] === `R`) {
       const before = padded.substring(0, 18);
       const after = padded.substring(18 + 10);
-      return (before + newName.padEnd(10) + after).trimEnd();
+      return (before + DisplayFile.fitColumn(newName, 10, `left`) + after).trimEnd();
     }
-    return line.replace(/\bR\s+\S+/, `R ${newName}`);
+    return line.replace(/\bR\s+\S+/, `R ${DisplayFile.fitColumn(newName, 10, `left`).trimEnd()}`);
   }
 
   /**
@@ -1039,7 +1102,11 @@ export class FieldInfo {
   public type: string | undefined;
   public primitiveType: "char" | "decimal" | undefined;
   public displayType: DisplayType | undefined;
-  public length: number = 0;
+  /**
+   * Field length from DDS cols 30–34. `undefined` means the source column was
+   * blank and must stay blank on re-emit (do not invent `0`).
+   */
+  public length: number | undefined = undefined;
   public decimals: number = 0;
   public position: { x: number, y: number } = { x: 0, y: 0 };
   public keywordStrings: { keywordLines: string[], conditionalLines: { [lineIndex: number]: string } } = { keywordLines: [], conditionalLines: {} };
@@ -1055,6 +1122,11 @@ export class FieldInfo {
    * source column stays blank on round-trip.
    */
   public resolvedLength: number | undefined;
+  /**
+   * Raw col-38 usage character when it is not one of the known mappings.
+   * Preserved so re-emit never drops the definition line.
+   */
+  public rawUsage: string | undefined;
   /** Non-passthrough lines owned by this field (definition + keywords) */
   public ownedLines: number[] = [];
 
@@ -1068,7 +1140,7 @@ export class FieldInfo {
     field.type = data.type;
     field.primitiveType = data.primitiveType;
     field.displayType = data.displayType;
-    field.length = data.length ?? 0;
+    field.length = data.length;
     field.decimals = data.decimals ?? 0;
     field.position = data.position ? { ...data.position } : { x: 0, y: 0 };
     field.conditions = data.conditions ? [...data.conditions] : [];
@@ -1077,6 +1149,7 @@ export class FieldInfo {
     field.reference = data.reference;
     field.isReference = data.isReference ?? false;
     field.resolvedLength = data.resolvedLength;
+    field.rawUsage = data.rawUsage;
     field.ownedLines = data.ownedLines ? [...data.ownedLines] : [field.startRange];
     return field;
   }

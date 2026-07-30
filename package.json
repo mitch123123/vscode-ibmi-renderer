@@ -2,7 +2,7 @@
   "name": "vscode-ibmi-renderer",
   "displayName": "IBM i Display File Designer",
   "description": "Visual designer for IBM i display and printer files (DDS)",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "halcyontechltd",
   "license": "MIT",
   "repository": {

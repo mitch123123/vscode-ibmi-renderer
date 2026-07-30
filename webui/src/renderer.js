@@ -19,6 +19,7 @@ import { getDraggingField, clearDraggingField, isValidRecordName } from "./palet
 import { requestHostInput, requestHostConfirm, showHostError } from "./hostDialogs.js";
 import { vscode } from "./vscodeApi.js";
 import { announce } from "./a11y.js";
+import { clampFieldPosition } from "./coords.js";
 
 /** @type {DisplayFile|undefined} */
 let activeDocument = undefined;
@@ -70,6 +71,7 @@ let formatTabMenuCleanup = undefined;
  * @param {{ restoreSelection?: boolean }} [opts]
  */
 export function loadDDS(newDoc, type, withRerender = true, opts = {}) {
+  cancelPendingNudge();
   const prevSelection = selectedItems.map(s => s.field.name).filter(Boolean);
   activeDocument = newDoc;
   activeDocumentType = type || `dds.dspf`;
@@ -164,21 +166,41 @@ export function refreshCanvas() {
 function screenToFieldPosition(screenX, screenY, opts = {}) {
   let x = screenX;
   let y = screenY;
+  let maxX = renderCols;
+  let maxY = renderRows;
   if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
     x = screenX - (activeWindowOrigin.originX - 1);
     y = screenY - (activeWindowOrigin.originY - 1);
-    const maxX = activeWindowOrigin.baseWidth || renderCols;
-    const maxY = activeWindowOrigin.baseHeight || renderRows;
-    x = Math.min(Math.max(1, x), maxX);
-    y = Math.min(Math.max(1, y), maxY);
-  } else {
-    x = Math.min(Math.max(1, x), renderCols);
-    y = Math.min(Math.max(1, y), renderRows);
+    maxX = activeWindowOrigin.baseWidth || renderCols;
+    maxY = activeWindowOrigin.baseHeight || renderRows;
   }
-  if (opts.wasY0) {
-    y = 0;
-  }
-  return { x, y };
+  return clampFieldPosition(x, y, {
+    maxX,
+    maxY,
+    wasY0: opts.wasY0 || opts.preserveY0,
+  });
+}
+
+/** Current DDS position bounds (window-relative when a WINDOW format is active). */
+function currentPositionBounds() {
+  return {
+    maxX: activeWindowOrigin?.baseWidth || renderCols,
+    maxY: activeWindowOrigin?.baseHeight || renderRows,
+  };
+}
+
+/**
+ * Pixel position for a DDS field position, including active WINDOW origin.
+ * @param {{ x: number, y: number }} pos
+ */
+function fieldPositionToPixels(pos) {
+  const originX = activeWindowOrigin?.originX != null ? activeWindowOrigin.originX - 1 : 0;
+  const originY = activeWindowOrigin?.originY != null ? activeWindowOrigin.originY - 1 : 0;
+  const posY = pos.y > 0 ? pos.y : 1;
+  return {
+    x: RULER_LEFT + widthInP(originX + pos.x - 1),
+    y: RULER_TOP + heightInP(originY + posY - 1),
+  };
 }
 
 /**
@@ -188,6 +210,9 @@ export function setWindowForFormat(chosenFormat) {
   let cols = 80;
   let rows = 24;
   const formatChanged = chosenFormat !== lastSelectedFormat;
+  if (formatChanged) {
+    cancelPendingNudge();
+  }
 
   suppressNextBgClick = false;
   if (marqueeWindowCleanup) {
@@ -1057,14 +1082,16 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
       ? selectedItems
       : [{ group: cGroup, field: fieldInfo }];
 
+    const bounds = currentPositionBounds();
     const updates = moving.map(({ field }) => ({
       originalFieldName: field.name,
       fieldInfo: {
         ...field,
-        position: {
-          x: Math.max(1, field.position.x + dx),
-          y: field.position.y === 0 ? 0 : Math.max(1, field.position.y + dy),
-        }
+        position: clampFieldPosition(
+          field.position.x + dx,
+          field.position.y === 0 ? 0 : field.position.y + dy,
+          { ...bounds, wasY0: field.position.y === 0 },
+        ),
       }
     }));
 
@@ -1242,7 +1269,8 @@ function alignSelectedFields(mode) {
   if (!selectedItems.length || !editsAllowed()) {
     return;
   }
-  const cols = activeWindowOrigin?.baseWidth || renderCols;
+  const bounds = currentPositionBounds();
+  const cols = bounds.maxX;
   /** @type {Array<{ originalFieldName: string, fieldInfo: any }>} */
   const updates = [];
 
@@ -1250,28 +1278,44 @@ function alignSelectedFields(mode) {
     const item = selectedItems[0];
     const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
     const next = JSON.parse(JSON.stringify(item.field));
-    next.position = { ...next.position, x: Math.max(1, Math.floor((cols - len) / 2) + 1) };
+    next.position = clampFieldPosition(
+      Math.floor((cols - len) / 2) + 1,
+      next.position.y,
+      { ...bounds, wasY0: next.position.y === 0 },
+    );
     updates.push({ originalFieldName: item.field.name, fieldInfo: next });
   } else if (mode === `left` || mode === `right` || mode === `top`) {
+    // Exclude y=0 (printer relative) fields from top-align targets so we do
+    // not force normal fields onto a blank row.
     const xs = selectedItems.map((s) => s.field.position.x);
-    const ys = selectedItems.map((s) => s.field.position.y);
+    const ys = selectedItems
+      .map((s) => s.field.position.y)
+      .filter((y) => y > 0);
     const targetX = mode === `left` ? Math.min(...xs) : mode === `right` ? Math.max(...xs) : undefined;
-    const targetY = mode === `top` ? Math.min(...ys) : undefined;
+    const targetY = mode === `top` && ys.length > 0 ? Math.min(...ys) : undefined;
     for (const item of selectedItems) {
       const next = JSON.parse(JSON.stringify(item.field));
+      const wasY0 = next.position.y === 0;
+      let x = next.position.x;
+      let y = next.position.y;
       if (targetX != null) {
-        next.position.x = targetX;
+        x = targetX;
       }
-      if (targetY != null) {
-        next.position.y = targetY;
+      if (targetY != null && !wasY0) {
+        y = targetY;
       }
+      next.position = clampFieldPosition(x, y, { ...bounds, wasY0 });
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
     }
   } else if (mode === `center` && selectedItems.length > 1) {
     for (const item of selectedItems) {
       const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
       const next = JSON.parse(JSON.stringify(item.field));
-      next.position = { ...next.position, x: Math.max(1, Math.floor((cols - len) / 2) + 1) };
+      next.position = clampFieldPosition(
+        Math.floor((cols - len) / 2) + 1,
+        next.position.y,
+        { ...bounds, wasY0: next.position.y === 0 },
+      );
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
     }
   }
@@ -1728,6 +1772,14 @@ let nudgeTimer = undefined;
 /** @type {{ recordFormat: string, updates: Array<{ originalFieldName: string, fieldInfo: any }> }|undefined} */
 let pendingNudge = undefined;
 
+function cancelPendingNudge() {
+  if (nudgeTimer) {
+    clearTimeout(nudgeTimer);
+    nudgeTimer = undefined;
+  }
+  pendingNudge = undefined;
+}
+
 function flushPendingNudge() {
   if (nudgeTimer) {
     clearTimeout(nudgeTimer);
@@ -1778,6 +1830,7 @@ export function setupKeyboard() {
     if (e.key === `Escape`) {
       if (selectedItems.length > 0) {
         e.preventDefault();
+        cancelPendingNudge();
         clearSelection(true);
         document.getElementById(`container`)?.focus();
         announce(`Selection cleared`);
@@ -1797,9 +1850,16 @@ export function setupKeyboard() {
       if (clipboard.length > 0 && lastSelectedFormat) {
         const format = activeDocument.formats.find(f => f.name === lastSelectedFormat);
         const existing = new Set((format?.fields || []).map(f => f.name));
+        const bounds = currentPositionBounds();
         const fields = clipboard.map((field) => {
           const copy = JSON.parse(JSON.stringify(field));
-          copy.position = { x: field.position.x, y: Math.min(renderRows, field.position.y + 1) };
+          const wasY0 = field.position.y === 0;
+          // Preserve printer y=0; otherwise paste one row below the original.
+          copy.position = clampFieldPosition(
+            field.position.x,
+            wasY0 ? 0 : field.position.y + 1,
+            { ...bounds, wasY0 },
+          );
           const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
           copy.name = uniqueFieldName(`${base}_C`, existing);
           existing.add(copy.name);
@@ -1888,17 +1948,17 @@ export function setupKeyboard() {
     e.preventDefault();
 
     // Mutate local field positions so held keys accumulate before the flush.
+    const bounds = currentPositionBounds();
     const updates = selectedItems.map(({ field, group }) => {
-      const nextPos = {
-        x: Math.min(renderCols, Math.max(1, field.position.x + dx)),
-        y: Math.min(renderRows, Math.max(1, field.position.y + dy)),
-      };
+      const wasY0 = field.position.y === 0;
+      const nextPos = clampFieldPosition(
+        field.position.x + dx,
+        wasY0 ? 0 : field.position.y + dy,
+        { ...bounds, wasY0 },
+      );
       field.position = nextPos;
       if (group) {
-        group.absolutePosition({
-          x: (nextPos.x - 1) * pxwPerChar + RULER_LEFT,
-          y: (nextPos.y - 1) * pxhPerLine + RULER_TOP,
-        });
+        group.absolutePosition(fieldPositionToPixels(nextPos));
       }
       return {
         originalFieldName: field.name,

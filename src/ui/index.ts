@@ -20,6 +20,7 @@ import { DisplayFile, FieldInfo, splitDocumentLines } from "./dspf";
 import { browseDatabaseFieldsInteractive, DbFieldDef, fetchFileFieldsByName } from "../dbBrowse";
 import { VIEW_TYPE, WebviewToHostMessage } from "../shared/messages";
 import { isValidRecordName, RECORD_NAME_HINT } from "../shared/recordName";
+import { validateFieldEditPayload, validateFormatKeywords } from "../shared/editValidation";
 import type { DdsUpdate } from "../shared/dspf-types";
 
 export { VIEW_TYPE };
@@ -648,6 +649,11 @@ class DspfDesignerSession {
 
       case "newField": {
         const fieldInfo = FieldInfo.fromData(message.fieldInfo);
+        const fieldError = validateFieldEditPayload(fieldInfo);
+        if (fieldError) {
+          this.reportEditFailure(fieldError);
+          break;
+        }
         const newField = this.dds.updateField(message.recordFormat, undefined, fieldInfo);
         if (newField?.range) {
           const workspaceEdit = new WorkspaceEdit();
@@ -666,6 +672,13 @@ class DspfDesignerSession {
         if (!format || !message.fields?.length) {
           break;
         }
+        for (const f of message.fields) {
+          const fieldError = validateFieldEditPayload(f);
+          if (fieldError) {
+            this.reportEditFailure(fieldError);
+            return;
+          }
+        }
         const newLines: string[] = [];
         for (const f of message.fields) {
           newLines.push(...DisplayFile.getLinesForField(FieldInfo.fromData(f)));
@@ -682,6 +695,11 @@ class DspfDesignerSession {
 
       case "updateField": {
         const fieldInfo = FieldInfo.fromData(message.fieldInfo);
+        const fieldError = validateFieldEditPayload(fieldInfo);
+        if (fieldError) {
+          this.reportEditFailure(fieldError);
+          break;
+        }
         const fieldUpdate = this.dds.updateField(
           message.recordFormat,
           message.originalFieldName,
@@ -705,6 +723,13 @@ class DspfDesignerSession {
       }
 
       case "updateFields": {
+        for (const u of message.updates) {
+          const fieldError = validateFieldEditPayload(u.fieldInfo);
+          if (fieldError) {
+            this.reportEditFailure(fieldError);
+            return;
+          }
+        }
         const prepared = message.updates
           .map((u) => {
             const fieldInfo = FieldInfo.fromData(u.fieldInfo);
@@ -737,6 +762,11 @@ class DspfDesignerSession {
       }
 
       case "updateFormat": {
+        const kwError = validateFormatKeywords(message.newKeywords);
+        if (kwError) {
+          this.reportEditFailure(kwError);
+          break;
+        }
         const formatUpdate = this.dds.updateFormatHeader(message.recordFormat, message.newKeywords);
         if (!formatUpdate?.range) {
           break;

@@ -6,6 +6,30 @@ documented here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-29
+
+### Fixed
+
+- Emitter: usage `M` (message) and `P` (program) fields no longer lose their
+  definition line on edit; unknown col-38 usage is preserved verbatim.
+- Emitter: printer-style blank row (`y === 0`) re-emits blank cols 39–41
+  instead of inventing `0`.
+- Emitter: blank length columns stay blank on re-emit (no invented `0`).
+- Emitter: `fitColumn` truncates overflowing name/length/row/col/indicator/
+  keyword segments so they cannot shift neighboring DDS columns.
+- Parser: unrecognized col-17 lines (`H`/`J`/`K`/`O`, etc.) are kept as
+  passthrough so format-header edits no longer destroy them.
+- Canvas: arrow-key nudge respects WINDOW origin/bounds, preserves `y === 0`,
+  and positions groups with the same origin offset as render.
+- Canvas: multi-select drag clamps every member to screen/window bounds;
+  paste and align-top no longer force printer `y === 0` onto normal fields.
+- Canvas: pending nudge is cancelled on document reload, format switch, and
+  Escape so a stale snapshot cannot overwrite a later property edit.
+- Sidebar: length/decimals/SFLPAG/SFLSIZ/WINDOW/field-name inputs reject
+  invalid values instead of writing corrupt DDS.
+- Host: validates `newField(s)` / `updateField(s)` / `updateFormat` payloads
+  before applying a WorkspaceEdit and reports failures via `editFailed`.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added

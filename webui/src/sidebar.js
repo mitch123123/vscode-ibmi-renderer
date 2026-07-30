@@ -5,7 +5,82 @@
 import { createKeywordPanel, createValuesPanel, renderSections, clearKeywordEditor } from "./keywordEditor.js";
 import { renderPalette } from "./palette.js";
 import { renderIndicatorPanel } from "./indicators.js";
+import { showHostError } from "./hostDialogs.js";
+import {
+  isValidFieldName,
+  isValidRecordName,
+  FIELD_NAME_HINT,
+  DDS_MAX_LENGTH,
+  DDS_MAX_DECIMALS,
+} from "../../src/shared/recordName.ts";
 
+/**
+ * Parse a non-negative integer from a property string. Empty → undefined.
+ * @param {string|undefined|null} raw
+ * @param {string} label
+ * @param {number} max
+ * @returns {{ ok: true, value: number|undefined } | { ok: false, error: string }}
+ */
+function parseOptionalNonNegInt(raw, label, max) {
+  const s = String(raw ?? ``).trim();
+  if (s === ``) {
+    return { ok: true, value: undefined };
+  }
+  if (!/^\d+$/.test(s)) {
+    return { ok: false, error: `${label} must be a non-negative integer.` };
+  }
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 0 || n > max) {
+    return { ok: false, error: `${label} must be an integer from 0 to ${max}.` };
+  }
+  return { ok: true, value: n };
+}
+
+/**
+ * Parse a required positive integer.
+ * @param {string|undefined|null} raw
+ * @param {string} label
+ * @returns {{ ok: true, value: number } | { ok: false, error: string }}
+ */
+function parsePositiveInt(raw, label) {
+  const s = String(raw ?? ``).trim();
+  if (!/^\d+$/.test(s)) {
+    return { ok: false, error: `${label} must be a positive integer.` };
+  }
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 1) {
+    return { ok: false, error: `${label} must be a positive integer.` };
+  }
+  return { ok: true, value: n };
+}
+
+/**
+ * WINDOW value: four positive integers (`row col height width`) or a record name.
+ * @param {string} raw
+ * @returns {string|undefined} error message, or undefined if valid
+ */
+export function validateWindowValue(raw) {
+  const s = String(raw || ``).trim();
+  if (!s) {
+    return `WINDOW value is required.`;
+  }
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    if (!isValidRecordName(parts[0])) {
+      return `WINDOW reference must be a valid record name. ${FIELD_NAME_HINT}`;
+    }
+    return undefined;
+  }
+  if (parts.length !== 4) {
+    return `WINDOW must be four positive integers (row col height width) or a record-format name.`;
+  }
+  for (const p of parts) {
+    if (!/^\d+$/.test(p) || Number(p) < 1) {
+      return `WINDOW row, col, height, and width must be positive integers.`;
+    }
+  }
+  return undefined;
+}
 /**
  * @param {RecordInfo} recordInfo
  * @param {RecordInfo|undefined} globalInfo
@@ -90,8 +165,22 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       const pEl = pagInput;
       /** @type {any} */
       const sEl = sizInput;
-      const pVal = String(pEl.value || pagInput.getAttribute(`value`) || `10`).trim();
-      const sVal = String(sEl.value || sizInput.getAttribute(`value`) || pVal).trim();
+      const pRaw = String(pEl.value || pagInput.getAttribute(`value`) || `10`).trim();
+      const sRaw = String(sEl.value || sizInput.getAttribute(`value`) || pRaw).trim();
+      const pParsed = parsePositiveInt(pRaw, `SFLPAG`);
+      if (!pParsed.ok) {
+        showHostError(pParsed.error);
+        return;
+      }
+      const sParsed = parsePositiveInt(sRaw, `SFLSIZ`);
+      if (!sParsed.ok) {
+        showHostError(sParsed.error);
+        return;
+      }
+      if (sParsed.value < pParsed.value) {
+        showHostError(`SFLSIZ must be greater than or equal to SFLPAG.`);
+        return;
+      }
       /** @type {Keyword[]} */
       const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
       const upsert = (name, value) => {
@@ -102,8 +191,8 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
           next.push({ name, value, conditions: [] });
         }
       };
-      upsert(`SFLPAG`, pVal);
-      upsert(`SFLSIZ`, sVal);
+      upsert(`SFLPAG`, String(pParsed.value));
+      upsert(`SFLSIZ`, String(sParsed.value));
       const endIdx = next.findIndex((k) => k.name === `SFLEND`);
       if (endSelect.value) {
         if (endIdx >= 0) {
@@ -175,6 +264,11 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       const tEl = titleInput;
       const wVal = String(wEl.value || winInput.getAttribute(`value`) || ``).trim();
       const tVal = String(tEl.value || titleInput.getAttribute(`value`) || ``).trim();
+      const winError = validateWindowValue(wVal);
+      if (winError) {
+        showHostError(winError);
+        return;
+      }
       /** @type {Keyword[]} */
       const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
       const upsert = (name, value) => {
@@ -291,6 +385,8 @@ const DISPLAY_TYPE_OPTIONS = [
   { value: `output`, label: `output (O)` },
   { value: `both`, label: `both (B)` },
   { value: `hidden`, label: `hidden (H)` },
+  { value: `message`, label: `message (M)` },
+  { value: `program`, label: `program (P)` },
   { value: `const`, label: `const (text)` },
 ];
 
@@ -315,21 +411,40 @@ const NUMERIC_DDS_TYPES = new Set([`S`, `P`, `Y`, `F`, `I`, `U`, `B`]);
 /**
  * @param {FieldInfo} fieldInfo
  * @param {Record<string, string>} newProps
- * @returns {FieldInfo}
+ * @returns {{ ok: true, field: FieldInfo } | { ok: false, error: string }}
  */
 function normalizeFieldProps(fieldInfo, newProps) {
   const prevDisplay = fieldInfo.displayType;
+
+  let length = fieldInfo.length;
+  if (newProps.length !== undefined) {
+    const parsed = parseOptionalNonNegInt(newProps.length, `Length`, DDS_MAX_LENGTH);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    length = parsed.value;
+  }
+
+  let decimals = fieldInfo.decimals ?? 0;
+  if (newProps.decimals !== undefined) {
+    const parsed = parseOptionalNonNegInt(newProps.decimals, `Decimals`, DDS_MAX_DECIMALS);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    decimals = parsed.value ?? 0;
+  }
+
   /** @type {FieldInfo} */
   const next = {
     ...fieldInfo,
-    name: newProps.name !== undefined ? newProps.name.trim() : fieldInfo.name,
+    name: newProps.name !== undefined ? newProps.name.trim().toUpperCase() : fieldInfo.name,
     value: newProps.value !== undefined ? newProps.value : fieldInfo.value,
     displayType: /** @type {FieldInfo['displayType']} */ (
       newProps.displayType !== undefined ? newProps.displayType : fieldInfo.displayType
     ),
     type: newProps.type !== undefined ? (newProps.type.trim() || undefined) : fieldInfo.type,
-    length: newProps.length !== undefined ? Number(newProps.length) || 0 : fieldInfo.length,
-    decimals: newProps.decimals !== undefined ? Number(newProps.decimals) || 0 : fieldInfo.decimals,
+    length,
+    decimals,
   };
 
   if (newProps.reference !== undefined) {
@@ -345,7 +460,7 @@ function normalizeFieldProps(fieldInfo, newProps) {
     next.type = undefined;
     next.isReference = false;
     next.primitiveType = `char`;
-    if (!next.length && next.value) {
+    if (next.length == null && next.value) {
       next.length = String(next.value).length;
     }
   }
@@ -353,13 +468,13 @@ function normalizeFieldProps(fieldInfo, newProps) {
   // Switching from const to a named field usage
   if (prevDisplay === `const` && next.displayType && next.displayType !== `const`) {
     if (!next.name) {
-      const base = String(next.value || `FIELD`).replace(/[^A-Za-z0-9]/g, ``).toUpperCase() || `FIELD`;
+      const base = String(next.value || `FIELD`).replace(/[^A-Za-z0-9@#$]/g, ``).toUpperCase() || `FIELD`;
       next.name = base.substring(0, 10);
     }
     if (!next.type || !String(next.type).trim()) {
       next.type = `A`;
     }
-    if (!next.length) {
+    if (next.length == null || next.length === 0) {
       next.length = Math.max(1, String(next.value || ``).length || 10);
     }
   }
@@ -367,6 +482,14 @@ function normalizeFieldProps(fieldInfo, newProps) {
   // Named fields need a name
   if (next.displayType !== `const` && !next.name) {
     next.name = `FIELD1`;
+  }
+
+  if (next.displayType !== `const` && next.name && !isValidFieldName(next.name)) {
+    return { ok: false, error: `Invalid field name. ${FIELD_NAME_HINT}` };
+  }
+
+  if (next.length != null && next.decimals > next.length) {
+    return { ok: false, error: `Decimals (${next.decimals}) cannot exceed length (${next.length}).` };
   }
 
   const typeUpper = (next.type || ``).toUpperCase();
@@ -403,7 +526,7 @@ function normalizeFieldProps(fieldInfo, newProps) {
     next.conditions = [c1, c2, c3].filter(Boolean);
   }
 
-  return next;
+  return { ok: true, field: next };
 }
 
 /**
@@ -429,7 +552,7 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
       id: `type`,
       options: DDS_TYPE_OPTIONS,
     },
-    { label: `Length`, value: fieldInfo.length ?? 0, id: `length` },
+    { label: `Length`, value: fieldInfo.length ?? ``, id: `length` },
     { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals` },
     { label: `Value`, value: fieldInfo.value ?? ``, id: `value` },
     { label: `Position`, value: `${fieldInfo.position.x}, ${fieldInfo.position.y}` },
@@ -470,8 +593,12 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
       title: `Properties`,
       open: true,
       html: createValuesPanel(`properties-${fieldInfo.name || `field`}`, properties, (newProps) => {
-        const next = normalizeFieldProps(fieldInfo, newProps);
-        onUpdate(next);
+        const result = normalizeFieldProps(fieldInfo, newProps);
+        if (!result.ok) {
+          showHostError(result.error);
+          return;
+        }
+        onUpdate(result.field);
       }),
     },
     {

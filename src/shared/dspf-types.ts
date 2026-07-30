@@ -37,7 +37,14 @@ export interface Keyword {
   conditions: Conditional[];
 }
 
-export type DisplayType = "input" | "output" | "both" | "const" | "hidden";
+export type DisplayType =
+  | "input"
+  | "output"
+  | "both"
+  | "const"
+  | "hidden"
+  | "message"
+  | "program";
 
 export interface FieldInfoData {
   startRange: number;
@@ -47,7 +54,11 @@ export interface FieldInfoData {
   type?: string;
   primitiveType?: "char" | "decimal";
   displayType?: DisplayType;
-  length: number;
+  /**
+   * Field length from DDS cols 30–34. `undefined` means the source column was
+   * blank and must stay blank on re-emit (do not invent `0`).
+   */
+  length?: number;
   decimals: number;
   position: { x: number; y: number };
   conditions: Conditional[];
@@ -62,6 +73,11 @@ export interface FieldInfoData {
    * preserved.
    */
   resolvedLength?: number;
+  /**
+   * Raw col-38 usage character when it is not one of the known mappings
+   * (I/O/B/H/M/P). Preserved so re-emit never drops the definition line.
+   */
+  rawUsage?: string;
 }
 
 export interface RecordInfoData {

@@ -607,4 +607,98 @@ describe('DisplayFile tests', () => {
     const def = next.find(l => l.includes(`FLD001`))!;
     expect(def).toMatch(/FLD001\s+7S 2B/);
   });
+
+  it('round-trips usage M and P without dropping the definition line', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            MSGFLD        10A  M  2  5`,
+      `     A            PGMFLD         5A  P  3  1`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form = dds.formats.find(f => f.name === `FORM1`)!;
+    const msg = form.fields.find(f => f.name === `MSGFLD`)!;
+    const pgm = form.fields.find(f => f.name === `PGMFLD`)!;
+    expect(msg.displayType).toBe(`message`);
+    expect(pgm.displayType).toBe(`program`);
+
+    msg.position.x = 6;
+    const update = dds.updateField(`FORM1`, `MSGFLD`, msg)!;
+    const next = dds.applyUpdateToLines(lines, update);
+    const def = next.find(l => l.includes(`MSGFLD`))!;
+    expect(def[37]).toBe(`M`); // usage col 38
+    expect(def.substring(41, 44).trim()).toBe(`6`);
+    expect(next.some(l => l.includes(`PGMFLD`))).toBe(true);
+  });
+
+  it('preserves blank row (y=0) on printer-style re-emit', () => {
+    const lines: string[] = [
+      `     A          R DETAIL`,
+      `     A            AMT           7  2     25`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const amt = dds.formats.find(f => f.name === `DETAIL`)!.fields.find(f => f.name === `AMT`)!;
+    expect(amt.position.y).toBe(0);
+
+    amt.keywords = [{ name: `EDTCDE`, value: `1`, conditions: [] }];
+    const generated = DisplayFile.getLinesForField(amt);
+    // Cols 39-41 (indexes 38-40) must stay blank — never invent row 0.
+    expect(generated[0].substring(38, 41)).toBe(`   `);
+    expect(generated[0].substring(41, 44).trim()).toBe(`25`);
+  });
+
+  it('preserves blank length column on named (non-ref) field re-emit', () => {
+    // Name FLD1 (4 chars) + pad to 10, blank col 29, blank length 30-34, type A at 35
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD1            A  O  2  5`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `FLD1`)!;
+    expect(fld.length).toBeUndefined();
+
+    fld.position.x = 6;
+    const generated = DisplayFile.getLinesForField(fld);
+    expect(generated[0].substring(29, 34)).toBe(`     `);
+    expect(generated[0][34]).toBe(`A`);
+  });
+
+  it('fitColumn keeps overflow from shifting type/usage/row/col', () => {
+    const field = new FieldInfo(0, `THISISLONG1`); // 11 chars
+    field.displayType = `both`;
+    field.type = `A`;
+    field.length = 100000; // 6 digits
+    field.position = { x: 1000, y: 1000 };
+    const line = DisplayFile.getLinesForField(field)[0];
+    expect(line.substring(18, 28)).toBe(`THISISLONG`); // truncated to 10
+    expect(line.substring(29, 34)).toBe(`00000`); // right-truncated to 5
+    expect(line[34]).toBe(`A`);
+    expect(line[37]).toBe(`B`);
+    expect(line.substring(38, 41)).toBe(`000`); // 1000 → last 3
+    expect(line.substring(41, 44)).toBe(`000`);
+  });
+
+  it('preserves H-spec lines across format header updates', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A          H SPECHELP`,
+      `     A                                      HELP`,
+      `     A            FLD1          5A  O  1  1`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form = dds.formats.find(f => f.name === `FORM1`)!;
+    expect(form.passthroughLines.some(p => p.text.includes(`SPECHELP`))).toBe(true);
+
+    const update = dds.updateFormatHeader(`FORM1`, [
+      ...form.keywords,
+      { name: `COLOR`, value: `BLU`, conditions: [] },
+    ])!;
+    const next = dds.applyUpdateToLines(lines, update);
+    expect(next.some(l => l.includes(`SPECHELP`))).toBe(true);
+    expect(next.some(l => l.includes(`COLOR(BLU)`))).toBe(true);
+    expect(next.some(l => l.includes(`FLD1`))).toBe(true);
+  });
 });

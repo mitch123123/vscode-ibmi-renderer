@@ -1178,6 +1178,11 @@
   function isValidRecordName2(name) {
     return RECORD_NAME_RE.test((name || ``).trim().toUpperCase());
   }
+  var isValidFieldName = isValidRecordName2;
+  var RECORD_NAME_HINT = `Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $ (must start with a letter or @/#/$).`;
+  var FIELD_NAME_HINT = RECORD_NAME_HINT;
+  var DDS_MAX_LENGTH = 99999;
+  var DDS_MAX_DECIMALS = 99;
 
   // webui/src/palette.js
   var paletteItems = [
@@ -1698,7 +1703,98 @@
     showForm(`pick`);
   }
 
+  // webui/src/vscodeApi.js
+  var vscode = acquireVsCodeApi();
+
+  // webui/src/hostDialogs.js
+  var pending = /* @__PURE__ */ new Map();
+  var nextId = 1;
+  function resolveHostDialog(requestId, value) {
+    const resolve = pending.get(requestId);
+    if (!resolve) {
+      return;
+    }
+    pending.delete(requestId);
+    resolve(value);
+  }
+  function requestHostInput(opts) {
+    const requestId = String(nextId++);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      vscode.postMessage({
+        command: `requestInput`,
+        requestId,
+        title: opts.title,
+        value: opts.value,
+        prompt: opts.prompt,
+        validate: opts.validate
+      });
+    });
+  }
+  function requestHostConfirm(opts) {
+    const requestId = String(nextId++);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      vscode.postMessage({
+        command: `requestConfirm`,
+        requestId,
+        message: opts.message,
+        confirmLabel: opts.confirmLabel
+      });
+    });
+  }
+  function showHostError(message) {
+    vscode.postMessage({ command: `showError`, message });
+  }
+
   // webui/src/sidebar.js
+  function parseOptionalNonNegInt(raw, label, max) {
+    const s = String(raw ?? ``).trim();
+    if (s === ``) {
+      return { ok: true, value: void 0 };
+    }
+    if (!/^\d+$/.test(s)) {
+      return { ok: false, error: `${label} must be a non-negative integer.` };
+    }
+    const n = Number(s);
+    if (!Number.isInteger(n) || n < 0 || n > max) {
+      return { ok: false, error: `${label} must be an integer from 0 to ${max}.` };
+    }
+    return { ok: true, value: n };
+  }
+  function parsePositiveInt(raw, label) {
+    const s = String(raw ?? ``).trim();
+    if (!/^\d+$/.test(s)) {
+      return { ok: false, error: `${label} must be a positive integer.` };
+    }
+    const n = Number(s);
+    if (!Number.isInteger(n) || n < 1) {
+      return { ok: false, error: `${label} must be a positive integer.` };
+    }
+    return { ok: true, value: n };
+  }
+  function validateWindowValue(raw) {
+    const s = String(raw || ``).trim();
+    if (!s) {
+      return `WINDOW value is required.`;
+    }
+    const parts = s.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) {
+      if (!isValidRecordName2(parts[0])) {
+        return `WINDOW reference must be a valid record name. ${FIELD_NAME_HINT}`;
+      }
+      return void 0;
+    }
+    if (parts.length !== 4) {
+      return `WINDOW must be four positive integers (row col height width) or a record-format name.`;
+    }
+    for (const p of parts) {
+      if (!/^\d+$/.test(p) || Number(p) < 1) {
+        return `WINDOW row, col, height, and width must be positive integers.`;
+      }
+    }
+    return void 0;
+  }
   function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, overlayFormats2, onFormatUpdate, onOverlayChange, onFileUpdate, onSelectField) {
     const sidebar = document.getElementById(`recordFormatSidebar`);
     let sections = [];
@@ -1762,8 +1858,22 @@
       apply.onclick = () => {
         const pEl = pagInput;
         const sEl = sizInput;
-        const pVal = String(pEl.value || pagInput.getAttribute(`value`) || `10`).trim();
-        const sVal = String(sEl.value || sizInput.getAttribute(`value`) || pVal).trim();
+        const pRaw = String(pEl.value || pagInput.getAttribute(`value`) || `10`).trim();
+        const sRaw = String(sEl.value || sizInput.getAttribute(`value`) || pRaw).trim();
+        const pParsed = parsePositiveInt(pRaw, `SFLPAG`);
+        if (!pParsed.ok) {
+          showHostError(pParsed.error);
+          return;
+        }
+        const sParsed = parsePositiveInt(sRaw, `SFLSIZ`);
+        if (!sParsed.ok) {
+          showHostError(sParsed.error);
+          return;
+        }
+        if (sParsed.value < pParsed.value) {
+          showHostError(`SFLSIZ must be greater than or equal to SFLPAG.`);
+          return;
+        }
         const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
         const upsert = (name, value) => {
           const i = next.findIndex((k) => k.name === name);
@@ -1773,8 +1883,8 @@
             next.push({ name, value, conditions: [] });
           }
         };
-        upsert(`SFLPAG`, pVal);
-        upsert(`SFLSIZ`, sVal);
+        upsert(`SFLPAG`, String(pParsed.value));
+        upsert(`SFLSIZ`, String(sParsed.value));
         const endIdx = next.findIndex((k) => k.name === `SFLEND`);
         if (endSelect.value) {
           if (endIdx >= 0) {
@@ -1839,6 +1949,11 @@
         const tEl = titleInput;
         const wVal = String(wEl.value || winInput.getAttribute(`value`) || ``).trim();
         const tVal = String(tEl.value || titleInput.getAttribute(`value`) || ``).trim();
+        const winError = validateWindowValue(wVal);
+        if (winError) {
+          showHostError(winError);
+          return;
+        }
         const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
         const upsert = (name, value) => {
           const i = next.findIndex((k) => k.name === name);
@@ -1935,6 +2050,8 @@
     { value: `output`, label: `output (O)` },
     { value: `both`, label: `both (B)` },
     { value: `hidden`, label: `hidden (H)` },
+    { value: `message`, label: `message (M)` },
+    { value: `program`, label: `program (P)` },
     { value: `const`, label: `const (text)` }
   ];
   var DDS_TYPE_OPTIONS = [
@@ -1955,17 +2072,33 @@
   var NUMERIC_DDS_TYPES = /* @__PURE__ */ new Set([`S`, `P`, `Y`, `F`, `I`, `U`, `B`]);
   function normalizeFieldProps(fieldInfo, newProps) {
     const prevDisplay = fieldInfo.displayType;
+    let length = fieldInfo.length;
+    if (newProps.length !== void 0) {
+      const parsed = parseOptionalNonNegInt(newProps.length, `Length`, DDS_MAX_LENGTH);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      length = parsed.value;
+    }
+    let decimals = fieldInfo.decimals ?? 0;
+    if (newProps.decimals !== void 0) {
+      const parsed = parseOptionalNonNegInt(newProps.decimals, `Decimals`, DDS_MAX_DECIMALS);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      decimals = parsed.value ?? 0;
+    }
     const next = {
       ...fieldInfo,
-      name: newProps.name !== void 0 ? newProps.name.trim() : fieldInfo.name,
+      name: newProps.name !== void 0 ? newProps.name.trim().toUpperCase() : fieldInfo.name,
       value: newProps.value !== void 0 ? newProps.value : fieldInfo.value,
       displayType: (
         /** @type {FieldInfo['displayType']} */
         newProps.displayType !== void 0 ? newProps.displayType : fieldInfo.displayType
       ),
       type: newProps.type !== void 0 ? newProps.type.trim() || void 0 : fieldInfo.type,
-      length: newProps.length !== void 0 ? Number(newProps.length) || 0 : fieldInfo.length,
-      decimals: newProps.decimals !== void 0 ? Number(newProps.decimals) || 0 : fieldInfo.decimals
+      length,
+      decimals
     };
     if (newProps.reference !== void 0) {
       const ref = newProps.reference.trim();
@@ -1978,24 +2111,30 @@
       next.type = void 0;
       next.isReference = false;
       next.primitiveType = `char`;
-      if (!next.length && next.value) {
+      if (next.length == null && next.value) {
         next.length = String(next.value).length;
       }
     }
     if (prevDisplay === `const` && next.displayType && next.displayType !== `const`) {
       if (!next.name) {
-        const base = String(next.value || `FIELD`).replace(/[^A-Za-z0-9]/g, ``).toUpperCase() || `FIELD`;
+        const base = String(next.value || `FIELD`).replace(/[^A-Za-z0-9@#$]/g, ``).toUpperCase() || `FIELD`;
         next.name = base.substring(0, 10);
       }
       if (!next.type || !String(next.type).trim()) {
         next.type = `A`;
       }
-      if (!next.length) {
+      if (next.length == null || next.length === 0) {
         next.length = Math.max(1, String(next.value || ``).length || 10);
       }
     }
     if (next.displayType !== `const` && !next.name) {
       next.name = `FIELD1`;
+    }
+    if (next.displayType !== `const` && next.name && !isValidFieldName(next.name)) {
+      return { ok: false, error: `Invalid field name. ${FIELD_NAME_HINT}` };
+    }
+    if (next.length != null && next.decimals > next.length) {
+      return { ok: false, error: `Decimals (${next.decimals}) cannot exceed length (${next.length}).` };
     }
     const typeUpper = (next.type || ``).toUpperCase();
     if (typeUpper === `R`) {
@@ -2027,7 +2166,7 @@
     if (newProps.cond1 !== void 0 || newProps.cond2 !== void 0 || newProps.cond3 !== void 0) {
       next.conditions = [c1, c2, c3].filter(Boolean);
     }
-    return next;
+    return { ok: true, field: next };
   }
   function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
     const sidebar = document.getElementById(`fieldInfoSidebar`);
@@ -2045,7 +2184,7 @@
         id: `type`,
         options: DDS_TYPE_OPTIONS
       },
-      { label: `Length`, value: fieldInfo.length ?? 0, id: `length` },
+      { label: `Length`, value: fieldInfo.length ?? ``, id: `length` },
       { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals` },
       { label: `Value`, value: fieldInfo.value ?? ``, id: `value` },
       { label: `Position`, value: `${fieldInfo.position.x}, ${fieldInfo.position.y}` },
@@ -2077,8 +2216,12 @@
         title: `Properties`,
         open: true,
         html: createValuesPanel(`properties-${fieldInfo.name || `field`}`, properties, (newProps) => {
-          const next = normalizeFieldProps(fieldInfo, newProps);
-          onUpdate(next);
+          const result = normalizeFieldProps(fieldInfo, newProps);
+          if (!result.ok) {
+            showHostError(result.error);
+            return;
+          }
+          onUpdate(result.field);
         })
       },
       {
@@ -2099,50 +2242,6 @@
     sidebar.appendChild(deleteButton);
   }
 
-  // webui/src/vscodeApi.js
-  var vscode = acquireVsCodeApi();
-
-  // webui/src/hostDialogs.js
-  var pending = /* @__PURE__ */ new Map();
-  var nextId = 1;
-  function resolveHostDialog(requestId, value) {
-    const resolve = pending.get(requestId);
-    if (!resolve) {
-      return;
-    }
-    pending.delete(requestId);
-    resolve(value);
-  }
-  function requestHostInput(opts) {
-    const requestId = String(nextId++);
-    return new Promise((resolve) => {
-      pending.set(requestId, resolve);
-      vscode.postMessage({
-        command: `requestInput`,
-        requestId,
-        title: opts.title,
-        value: opts.value,
-        prompt: opts.prompt,
-        validate: opts.validate
-      });
-    });
-  }
-  function requestHostConfirm(opts) {
-    const requestId = String(nextId++);
-    return new Promise((resolve) => {
-      pending.set(requestId, resolve);
-      vscode.postMessage({
-        command: `requestConfirm`,
-        requestId,
-        message: opts.message,
-        confirmLabel: opts.confirmLabel
-      });
-    });
-  }
-  function showHostError(message) {
-    vscode.postMessage({ command: `showError`, message });
-  }
-
   // webui/src/a11y.js
   function announce(message) {
     const el = document.getElementById(`srStatus`);
@@ -2153,6 +2252,18 @@
     requestAnimationFrame(() => {
       el.textContent = message || ``;
     });
+  }
+
+  // webui/src/coords.js
+  function clampFieldPosition(x, y, opts) {
+    const maxX = Math.max(1, opts.maxX || 1);
+    const maxY = Math.max(1, opts.maxY || 1);
+    let nextX = Math.min(Math.max(1, x), maxX);
+    let nextY = Math.min(Math.max(1, y), maxY);
+    if (opts.wasY0) {
+      nextY = 0;
+    }
+    return { x: nextX, y: nextY };
   }
 
   // webui/src/renderer.js
@@ -2176,6 +2287,7 @@
   var marqueeWindowCleanup = void 0;
   var formatTabMenuCleanup = void 0;
   function loadDDS(newDoc, type, withRerender = true, opts = {}) {
+    cancelPendingNudge();
     const prevSelection = selectedItems.map((s) => s.field.name).filter(Boolean);
     activeDocument = newDoc;
     activeDocumentType = type || `dds.dspf`;
@@ -2243,26 +2355,42 @@
   function screenToFieldPosition(screenX, screenY, opts = {}) {
     let x = screenX;
     let y = screenY;
+    let maxX = renderCols;
+    let maxY = renderRows;
     if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
       x = screenX - (activeWindowOrigin.originX - 1);
       y = screenY - (activeWindowOrigin.originY - 1);
-      const maxX = activeWindowOrigin.baseWidth || renderCols;
-      const maxY = activeWindowOrigin.baseHeight || renderRows;
-      x = Math.min(Math.max(1, x), maxX);
-      y = Math.min(Math.max(1, y), maxY);
-    } else {
-      x = Math.min(Math.max(1, x), renderCols);
-      y = Math.min(Math.max(1, y), renderRows);
+      maxX = activeWindowOrigin.baseWidth || renderCols;
+      maxY = activeWindowOrigin.baseHeight || renderRows;
     }
-    if (opts.wasY0) {
-      y = 0;
-    }
-    return { x, y };
+    return clampFieldPosition(x, y, {
+      maxX,
+      maxY,
+      wasY0: opts.wasY0 || opts.preserveY0
+    });
+  }
+  function currentPositionBounds() {
+    return {
+      maxX: activeWindowOrigin?.baseWidth || renderCols,
+      maxY: activeWindowOrigin?.baseHeight || renderRows
+    };
+  }
+  function fieldPositionToPixels(pos) {
+    const originX = activeWindowOrigin?.originX != null ? activeWindowOrigin.originX - 1 : 0;
+    const originY = activeWindowOrigin?.originY != null ? activeWindowOrigin.originY - 1 : 0;
+    const posY = pos.y > 0 ? pos.y : 1;
+    return {
+      x: RULER_LEFT + widthInP(originX + pos.x - 1),
+      y: RULER_TOP + heightInP(originY + posY - 1)
+    };
   }
   function setWindowForFormat(chosenFormat) {
     let cols = 80;
     let rows = 24;
     const formatChanged = chosenFormat !== lastSelectedFormat;
+    if (formatChanged) {
+      cancelPendingNudge();
+    }
     suppressNextBgClick = false;
     if (marqueeWindowCleanup) {
       marqueeWindowCleanup();
@@ -3028,14 +3156,16 @@
       const dx = newPos.x - fieldInfo.position.x;
       const dy = fieldInfo.position.y === 0 ? 0 : newPos.y - fieldInfo.position.y;
       const moving = selectedItems.some((s) => s.field.name === fieldInfo.name) && selectedItems.length > 1 ? selectedItems : [{ group: cGroup, field: fieldInfo }];
+      const bounds = currentPositionBounds();
       const updates = moving.map(({ field }) => ({
         originalFieldName: field.name,
         fieldInfo: {
           ...field,
-          position: {
-            x: Math.max(1, field.position.x + dx),
-            y: field.position.y === 0 ? 0 : Math.max(1, field.position.y + dy)
-          }
+          position: clampFieldPosition(
+            field.position.x + dx,
+            field.position.y === 0 ? 0 : field.position.y + dy,
+            { ...bounds, wasY0: field.position.y === 0 }
+          )
         }
       }));
       if (updates.length === 1) {
@@ -3184,34 +3314,47 @@
     if (!selectedItems.length || !editsAllowed()) {
       return;
     }
-    const cols = activeWindowOrigin?.baseWidth || renderCols;
+    const bounds = currentPositionBounds();
+    const cols = bounds.maxX;
     const updates = [];
     if (mode === `center` && selectedItems.length === 1) {
       const item = selectedItems[0];
       const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
       const next = JSON.parse(JSON.stringify(item.field));
-      next.position = { ...next.position, x: Math.max(1, Math.floor((cols - len) / 2) + 1) };
+      next.position = clampFieldPosition(
+        Math.floor((cols - len) / 2) + 1,
+        next.position.y,
+        { ...bounds, wasY0: next.position.y === 0 }
+      );
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
     } else if (mode === `left` || mode === `right` || mode === `top`) {
       const xs = selectedItems.map((s) => s.field.position.x);
-      const ys = selectedItems.map((s) => s.field.position.y);
+      const ys = selectedItems.map((s) => s.field.position.y).filter((y) => y > 0);
       const targetX = mode === `left` ? Math.min(...xs) : mode === `right` ? Math.max(...xs) : void 0;
-      const targetY = mode === `top` ? Math.min(...ys) : void 0;
+      const targetY = mode === `top` && ys.length > 0 ? Math.min(...ys) : void 0;
       for (const item of selectedItems) {
         const next = JSON.parse(JSON.stringify(item.field));
+        const wasY0 = next.position.y === 0;
+        let x = next.position.x;
+        let y = next.position.y;
         if (targetX != null) {
-          next.position.x = targetX;
+          x = targetX;
         }
-        if (targetY != null) {
-          next.position.y = targetY;
+        if (targetY != null && !wasY0) {
+          y = targetY;
         }
+        next.position = clampFieldPosition(x, y, { ...bounds, wasY0 });
         updates.push({ originalFieldName: item.field.name, fieldInfo: next });
       }
     } else if (mode === `center` && selectedItems.length > 1) {
       for (const item of selectedItems) {
         const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
         const next = JSON.parse(JSON.stringify(item.field));
-        next.position = { ...next.position, x: Math.max(1, Math.floor((cols - len) / 2) + 1) };
+        next.position = clampFieldPosition(
+          Math.floor((cols - len) / 2) + 1,
+          next.position.y,
+          { ...bounds, wasY0: next.position.y === 0 }
+        );
         updates.push({ originalFieldName: item.field.name, fieldInfo: next });
       }
     }
@@ -3596,6 +3739,13 @@
   }
   var nudgeTimer = void 0;
   var pendingNudge = void 0;
+  function cancelPendingNudge() {
+    if (nudgeTimer) {
+      clearTimeout(nudgeTimer);
+      nudgeTimer = void 0;
+    }
+    pendingNudge = void 0;
+  }
   function flushPendingNudge() {
     if (nudgeTimer) {
       clearTimeout(nudgeTimer);
@@ -3637,6 +3787,7 @@
       if (e.key === `Escape`) {
         if (selectedItems.length > 0) {
           e.preventDefault();
+          cancelPendingNudge();
           clearSelection(true);
           document.getElementById(`container`)?.focus();
           announce(`Selection cleared`);
@@ -3654,9 +3805,15 @@
         if (clipboard.length > 0 && lastSelectedFormat) {
           const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
           const existing = new Set((format?.fields || []).map((f) => f.name));
+          const bounds2 = currentPositionBounds();
           const fields = clipboard.map((field) => {
             const copy = JSON.parse(JSON.stringify(field));
-            copy.position = { x: field.position.x, y: Math.min(renderRows, field.position.y + 1) };
+            const wasY0 = field.position.y === 0;
+            copy.position = clampFieldPosition(
+              field.position.x,
+              wasY0 ? 0 : field.position.y + 1,
+              { ...bounds2, wasY0 }
+            );
             const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
             copy.name = uniqueFieldName(`${base}_C`, existing);
             existing.add(copy.name);
@@ -3739,17 +3896,17 @@
           return;
       }
       e.preventDefault();
+      const bounds = currentPositionBounds();
       const updates = selectedItems.map(({ field, group }) => {
-        const nextPos = {
-          x: Math.min(renderCols, Math.max(1, field.position.x + dx)),
-          y: Math.min(renderRows, Math.max(1, field.position.y + dy))
-        };
+        const wasY0 = field.position.y === 0;
+        const nextPos = clampFieldPosition(
+          field.position.x + dx,
+          wasY0 ? 0 : field.position.y + dy,
+          { ...bounds, wasY0 }
+        );
         field.position = nextPos;
         if (group) {
-          group.absolutePosition({
-            x: (nextPos.x - 1) * pxwPerChar + RULER_LEFT,
-            y: (nextPos.y - 1) * pxhPerLine + RULER_TOP
-          });
+          group.absolutePosition(fieldPositionToPixels(nextPos));
         }
         return {
           originalFieldName: field.name,
