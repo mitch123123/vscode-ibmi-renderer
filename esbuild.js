@@ -46,6 +46,7 @@ async function main() {
 		format: 'iife',
 		minify: production,
 		sourcemap: !production,
+		sourcesContent: false,
 		platform: 'browser',
 		outfile: 'webui/main.js',
 		logLevel: 'silent',
