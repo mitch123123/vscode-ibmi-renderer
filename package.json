@@ -12,6 +12,17 @@
   "engines": {
     "vscode": "^1.97.0"
   },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e3a5f",
+    "theme": "dark"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The DDS designer requires a trusted workspace because it enables a scripted custom editor that can edit source."
+    }
+  },
   "categories": [
     "Other",
     "Visualization"
@@ -74,14 +85,20 @@
         "icon": "$(edit)"
       },
       {
+        "command": "vscode-ibmi-renderer.editRecordFormat",
+        "title": "Edit Record Format",
+        "category": "IBM i",
+        "icon": "$(edit)"
+      },
+      {
         "command": "vscode-ibmi-renderer.showSource",
-        "title": "Show DDS Source",
+        "title": "Open DDS Source Beside",
         "category": "IBM i",
         "icon": "$(file-code)"
       },
       {
         "command": "vscode-ibmi-renderer.toggleEditorView",
-        "title": "Toggle Design / Source View",
+        "title": "Focus Other DDS Editor",
         "category": "IBM i",
         "icon": "$(arrow-swap)"
       }
@@ -141,6 +158,10 @@
           "when": "editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         },
         {
+          "command": "vscode-ibmi-renderer.editRecordFormat",
+          "when": "false"
+        },
+        {
           "command": "vscode-ibmi-renderer.showSource",
           "when": "activeCustomEditorId == ibmi.dspfDesigner"
         },
@@ -155,6 +176,8 @@
     "vscode:prepublish": "npm run package",
     "compile": "npm run build:frontend && npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:frontend": "npm run build:frontend",
     "build:frontend": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('webui/scripts',{recursive:true});const copies=[['node_modules/@vscode-elements/elements/dist/bundled.js','webui/scripts/vscode-elements.js'],['node_modules/@vscode/codicons/dist/codicon.css','webui/scripts/codicon.css'],['node_modules/@vscode/codicons/dist/codicon.ttf','webui/scripts/codicon.ttf'],['node_modules/konva/konva.min.js','webui/scripts/konva.min.js']];for(const [s,d] of copies)fs.copyFileSync(s,d);\"",
     "build:esbuild": "node esbuild.js",
     "build:tsc": "tsc --noEmit --project tsconfig.json",
@@ -170,8 +193,6 @@
     "@types/vscode": "^1.97.0",
     "@typescript-eslint/eslint-plugin": "^8.22.0",
     "@typescript-eslint/parser": "^8.22.0",
-    "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.24.2",
     "eslint": "^9.19.0",

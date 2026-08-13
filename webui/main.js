@@ -13,6 +13,7 @@
   };
   var SELECTED_COLOUR = `#383838`;
   var PROTECT_COLOUR = `#666666`;
+  var OVERLAP_COLOUR = `#5a2020`;
   var dateFormats = {
     "*MDY": `mm/dd/yyyy`,
     "*DMY": `dd/mm/yyyy`,
@@ -341,146 +342,146 @@
   ];
   var KEYWORD_CATALOG = [
     // —— File ——
-    { name: `DSPSIZ`, levels: [`file`], valueMode: `select`, options: DSPSIZ_OPTIONS, group: `File`, description: `Display size` },
-    { name: `INDARA`, levels: [`file`], valueMode: `none`, group: `File`, description: `Indicator area` },
-    { name: `PRINT`, levels: [`file`, `format`], valueMode: `none`, group: `File` },
-    { name: `HELP`, levels: [`file`, `format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Help key / response` },
-    { name: `HLPRTN`, levels: [`file`], valueMode: `none`, group: `File` },
-    { name: `MSGLOC`, levels: [`file`], valueMode: `text`, placeholder: `row`, group: `File` },
-    { name: `INVITE`, levels: [`file`, `format`], valueMode: `none`, group: `File` },
-    { name: `ALWGPH`, levels: [`file`], valueMode: `none`, group: `File` },
-    { name: `ALWROL`, levels: [`file`], valueMode: `none`, group: `File` },
-    { name: `CSRINPONLY`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `Cursor in input fields only` },
-    { name: `CSRLOC`, levels: [`file`, `format`], valueMode: `text`, placeholder: `row-field col-field`, group: `File` },
-    { name: `DSPMOD`, levels: [`file`], valueMode: `select`, options: [opt(`*DS3`), opt(`*DS4`)], group: `File` },
-    { name: `ERRSFL`, levels: [`file`], valueMode: `none`, group: `File` },
-    { name: `KEEP`, levels: [`file`, `format`], valueMode: `none`, group: `General` },
-    { name: `LOCK`, levels: [`file`, `format`], valueMode: `select`, options: LOCK_OPTIONS, group: `File`, description: `Lock keyboard; optional *ONLY` },
-    { name: `OPENPRT`, levels: [`file`], valueMode: `none`, group: `File` },
-    { name: `PASSRCD`, levels: [`file`], valueMode: `text`, placeholder: `record-format`, group: `File` },
-    { name: `REF`, levels: [`file`], valueMode: `text`, placeholder: `lib/file`, group: `File` },
-    { name: `USRDFN`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `User-defined record` },
-    { name: `WDWBORDER`, levels: [`file`, `format`], valueMode: `text`, placeholder: `*COLOR BLU *DSPATR RI`, group: `Window` },
-    { name: `CHGINPDFT`, levels: [`file`, `format`, `field`], valueMode: `multi`, options: CHECK_OPTIONS, group: `Display`, description: `Default input attributes` },
+    { name: `DSPSIZ`, levels: [`file`], valueMode: `select`, options: DSPSIZ_OPTIONS, group: `File`, description: `Display size (*DS3 24\xD780 or *DS4 27\xD7132)` },
+    { name: `INDARA`, levels: [`file`], valueMode: `none`, group: `File`, description: `Pass indicators in a separate indicator area` },
+    { name: `PRINT`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `Enable Print key for this file/record` },
+    { name: `HELP`, levels: [`file`, `format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Enable Help key; optional response indicator` },
+    { name: `HLPRTN`, levels: [`file`], valueMode: `none`, group: `File`, description: `Return to application after Help is used` },
+    { name: `MSGLOC`, levels: [`file`], valueMode: `text`, placeholder: `row`, group: `File`, description: `Row where ERRMSG / status messages appear` },
+    { name: `INVITE`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `Invite device for read; used with multiple devices` },
+    { name: `ALWGPH`, levels: [`file`], valueMode: `none`, group: `File`, description: `Allow graphics on the display` },
+    { name: `ALWROL`, levels: [`file`], valueMode: `none`, group: `File`, description: `Allow roll/page keys to roll the display` },
+    { name: `CSRINPONLY`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `Cursor moves only among input-capable fields` },
+    { name: `CSRLOC`, levels: [`file`, `format`], valueMode: `text`, placeholder: `row-field col-field`, group: `File`, description: `Program sets cursor row/column via named fields` },
+    { name: `DSPMOD`, levels: [`file`], valueMode: `select`, options: [opt(`*DS3`), opt(`*DS4`)], group: `File`, description: `Switch display mode (*DS3 / *DS4)` },
+    { name: `ERRSFL`, levels: [`file`], valueMode: `none`, group: `File`, description: `Show ERRMSG/ERRMSGID messages in an error subfile` },
+    { name: `KEEP`, levels: [`file`, `format`], valueMode: `none`, group: `General`, description: `Keep display contents when the file is closed` },
+    { name: `LOCK`, levels: [`file`, `format`], valueMode: `select`, options: LOCK_OPTIONS, group: `File`, description: `Keep keyboard locked after output; optional *ONLY` },
+    { name: `OPENPRT`, levels: [`file`], valueMode: `none`, group: `File`, description: `Open the printer file used by PRINT` },
+    { name: `PASSRCD`, levels: [`file`], valueMode: `text`, placeholder: `record-format`, group: `File`, description: `Record format passed between shared open files` },
+    { name: `REF`, levels: [`file`], valueMode: `text`, placeholder: `lib/file`, group: `File`, description: `Default database/reference file for REFFLD` },
+    { name: `USRDFN`, levels: [`file`, `format`], valueMode: `none`, group: `File`, description: `User-defined data stream (no DDS layout)` },
+    { name: `WDWBORDER`, levels: [`file`, `format`], valueMode: `text`, placeholder: `*COLOR BLU *DSPATR RI`, group: `Window`, description: `Default window border color/attributes` },
+    { name: `CHGINPDFT`, levels: [`file`, `format`, `field`], valueMode: `multi`, options: CHECK_OPTIONS, group: `Display`, description: `Change default input keyboard attributes` },
     // —— Format / record — General ——
-    { name: `OVERLAY`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `PUTOVR`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `OVRATR`, levels: [`format`, `field`], valueMode: `none`, group: `General` },
-    { name: `OVRDTA`, levels: [`format`, `field`], valueMode: `none`, group: `General` },
-    { name: `PROTECT`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `CLRL`, levels: [`format`], valueMode: `select`, options: [opt(`*NO`), opt(`*END`), opt(`*ALL`), ...Array.from({ length: 27 }, (_, i) => opt(String(i + 1)))], group: `General` },
-    { name: `SLNO`, levels: [`format`], valueMode: `text`, placeholder: `nn`, group: `General`, description: `Starting line number` },
-    { name: `ASSUME`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `FRCDTA`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `BLANKS`, levels: [`format`, `field`], valueMode: `none`, group: `General` },
-    { name: `CHANGE`, levels: [`format`, `field`], valueMode: `text`, placeholder: `response-indicator`, group: `General` },
-    { name: `INZRRN`, levels: [`format`], valueMode: `none`, group: `General` },
-    { name: `RTNCSRLOC`, levels: [`format`], valueMode: `text`, placeholder: `rec field`, group: `General` },
-    { name: `USRRSTDSP`, levels: [`format`], valueMode: `none`, group: `General` },
+    { name: `OVERLAY`, levels: [`format`], valueMode: `none`, group: `General`, description: `Write without clearing other records on the display` },
+    { name: `PUTOVR`, levels: [`format`], valueMode: `none`, group: `General`, description: `Allow OVRATR/OVRDTA to override displayed fields` },
+    { name: `OVRATR`, levels: [`format`, `field`], valueMode: `none`, group: `General`, description: `Override display attributes only (with PUTOVR)` },
+    { name: `OVRDTA`, levels: [`format`, `field`], valueMode: `none`, group: `General`, description: `Override field data only (with PUTOVR)` },
+    { name: `PROTECT`, levels: [`format`], valueMode: `none`, group: `General`, description: `Protect all input fields already on the display` },
+    { name: `CLRL`, levels: [`format`], valueMode: `select`, options: [opt(`*NO`), opt(`*END`), opt(`*ALL`), ...Array.from({ length: 27 }, (_, i) => opt(String(i + 1)))], group: `General`, description: `Clear lines before display (*NO, *END, *ALL, or line #)` },
+    { name: `SLNO`, levels: [`format`], valueMode: `text`, placeholder: `nn`, group: `General`, description: `Starting line number for this record` },
+    { name: `ASSUME`, levels: [`format`], valueMode: `none`, group: `General`, description: `Assume record is already on the display at open` },
+    { name: `FRCDTA`, levels: [`format`], valueMode: `none`, group: `General`, description: `Force immediate display without waiting for next I/O` },
+    { name: `BLANKS`, levels: [`format`, `field`], valueMode: `none`, group: `General`, description: `Set response indicator when field is all blanks` },
+    { name: `CHANGE`, levels: [`format`, `field`], valueMode: `text`, placeholder: `response-indicator`, group: `General`, description: `Set response indicator when data changes` },
+    { name: `INZRRN`, levels: [`format`], valueMode: `none`, group: `General`, description: `Initialize subfile relative record number to 1` },
+    { name: `RTNCSRLOC`, levels: [`format`], valueMode: `text`, placeholder: `rec field`, group: `General`, description: `Return cursor location (record and/or field names)` },
+    { name: `USRRSTDSP`, levels: [`format`], valueMode: `none`, group: `General`, description: `User-restored display (app restores after help/etc.)` },
     // —— Response ——
-    { name: `ROLLUP`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response` },
-    { name: `ROLLDOWN`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response` },
-    { name: `PAGEDOWN`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response` },
-    { name: `PAGEUP`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response` },
-    { name: `HOME`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
-    { name: `CLEAR`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
-    { name: `CA01`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CA02`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CA03`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CA12`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF01`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF02`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF03`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF04`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF05`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF06`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF07`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF08`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF09`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF10`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF11`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF12`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF13`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF14`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF15`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF16`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF17`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF18`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF19`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF20`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF21`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF22`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF23`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `CF24`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response` },
-    { name: `ALARM`, levels: [`format`], valueMode: `none`, group: `Response` },
-    { name: `SETOF`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
-    { name: `RETKEY`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
-    { name: `RETPAGE`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
-    { name: `VLDCMDKEY`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response` },
+    { name: `ROLLUP`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response`, description: `Roll Up key response indicator` },
+    { name: `ROLLDOWN`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response`, description: `Roll Down key response indicator` },
+    { name: `PAGEDOWN`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response`, description: `Page Down key response indicator` },
+    { name: `PAGEUP`, levels: [`format`], valueMode: `text`, placeholder: `xx [response]`, group: `Response`, description: `Page Up key response indicator` },
+    { name: `HOME`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Home key response indicator` },
+    { name: `CLEAR`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Clear key response indicator` },
+    { name: `CA01`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Attention key (no data returned)` },
+    { name: `CA02`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Attention key (no data returned)` },
+    { name: `CA03`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Attention key (no data returned)` },
+    { name: `CA12`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Attention key (no data returned)` },
+    { name: `CF01`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF02`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF03`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF04`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF05`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF06`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF07`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF08`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF09`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF10`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF11`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF12`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF13`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF14`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF15`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF16`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF17`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF18`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF19`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF20`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF21`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF22`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF23`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `CF24`, levels: [`format`], valueMode: `text`, placeholder: `xx ['text']`, group: `Response`, description: `Command Function key (returns field data)` },
+    { name: `ALARM`, levels: [`format`], valueMode: `none`, group: `Response`, description: `Sound audible alarm when record is displayed` },
+    { name: `SETOF`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Set off response indicators on output` },
+    { name: `RETKEY`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Set indicator when Record Advance / Enter pressed` },
+    { name: `RETPAGE`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Set indicator when Page key pressed` },
+    { name: `VLDCMDKEY`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Response`, description: `Set indicator when a valid command key is pressed` },
     // —— Window ——
-    { name: `WINDOW`, levels: [`format`], valueMode: `text`, placeholder: `startrow startcol rows cols`, group: `Window` },
-    { name: `WDWTITLE`, levels: [`format`], valueMode: `text`, placeholder: `*TEXT 'Title' *COLOR BLU`, group: `Window` },
+    { name: `WINDOW`, levels: [`format`], valueMode: `text`, placeholder: `startrow startcol rows cols`, group: `Window`, description: `Define window position and size on the display` },
+    { name: `WDWTITLE`, levels: [`format`], valueMode: `text`, placeholder: `*TEXT 'Title' *COLOR BLU`, group: `Window`, description: `Window title text, color, and placement` },
     // —— Subfile ——
-    { name: `SFL`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Subfile record` },
-    { name: `SFLCTL`, levels: [`format`], valueMode: `text`, placeholder: `subfile-record-name`, group: `Subfile` },
-    { name: `SFLDSP`, levels: [`format`], valueMode: `none`, group: `Subfile` },
-    { name: `SFLDSPCTL`, levels: [`format`], valueMode: `none`, group: `Subfile` },
-    { name: `SFLCLR`, levels: [`format`], valueMode: `none`, group: `Subfile` },
-    { name: `SFLINZ`, levels: [`format`], valueMode: `none`, group: `Subfile` },
-    { name: `SFLEND`, levels: [`format`], valueMode: `select`, options: [opt(``), opt(`*MORE`), opt(`*SCRBAR`)], group: `Subfile` },
-    { name: `SFLPAG`, levels: [`format`], valueMode: `text`, placeholder: `page-size`, group: `Subfile` },
-    { name: `SFLSIZ`, levels: [`format`], valueMode: `text`, placeholder: `size`, group: `Subfile` },
-    { name: `SFLMSG`, levels: [`format`, `field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `Subfile` },
-    { name: `SFLMSGID`, levels: [`format`, `field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `Subfile` },
-    { name: `SFLMSGRCD`, levels: [`format`], valueMode: `text`, placeholder: `line`, group: `Subfile`, description: `Message subfile record` },
-    { name: `SFLMSGKEY`, levels: [`field`], valueMode: `none`, group: `Subfile`, description: `Message key field` },
-    { name: `SFLNXTCHG`, levels: [`format`], valueMode: `none`, group: `Subfile` },
-    { name: `SFLRCDNBR`, levels: [`format`], valueMode: `select`, options: [opt(``), opt(`*TOP`), opt(`CURSOR`)], group: `Subfile` },
-    { name: `SFLROLVAL`, levels: [`format`], valueMode: `text`, group: `Subfile` },
-    { name: `SFLDROP`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Subfile` },
-    { name: `SFLFOLD`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Subfile` },
-    { name: `SFLENTER`, levels: [`format`], valueMode: `none`, group: `Subfile` },
+    { name: `SFL`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Identify this record as a subfile record format` },
+    { name: `SFLCTL`, levels: [`format`], valueMode: `text`, placeholder: `subfile-record-name`, group: `Subfile`, description: `Subfile control record; names the SFL record` },
+    { name: `SFLDSP`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Display the subfile records` },
+    { name: `SFLDSPCTL`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Display the subfile control record` },
+    { name: `SFLCLR`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Clear all records from the subfile` },
+    { name: `SFLINZ`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Initialize subfile with blank/default records` },
+    { name: `SFLEND`, levels: [`format`], valueMode: `select`, options: [opt(``), opt(`*MORE`), opt(`*SCRBAR`)], group: `Subfile`, description: `Show end-of-subfile / More\u2026 / scrollbar` },
+    { name: `SFLPAG`, levels: [`format`], valueMode: `text`, placeholder: `page-size`, group: `Subfile`, description: `Number of subfile records per displayed page` },
+    { name: `SFLSIZ`, levels: [`format`], valueMode: `text`, placeholder: `size`, group: `Subfile`, description: `Total subfile size (records in memory)` },
+    { name: `SFLMSG`, levels: [`format`, `field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `Subfile`, description: `Subfile message text (constant or msg file)` },
+    { name: `SFLMSGID`, levels: [`format`, `field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `Subfile`, description: `Subfile message from a message file` },
+    { name: `SFLMSGRCD`, levels: [`format`], valueMode: `text`, placeholder: `line`, group: `Subfile`, description: `Message subfile record; line for first message` },
+    { name: `SFLMSGKEY`, levels: [`field`], valueMode: `none`, group: `Subfile`, description: `Message key field for a message subfile` },
+    { name: `SFLNXTCHG`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Mark next changed records for READC` },
+    { name: `SFLRCDNBR`, levels: [`format`], valueMode: `select`, options: [opt(``), opt(`*TOP`), opt(`CURSOR`)], group: `Subfile`, description: `Subfile record number field / display position` },
+    { name: `SFLROLVAL`, levels: [`format`], valueMode: `text`, group: `Subfile`, description: `Number of records to roll for roll keys` },
+    { name: `SFLDROP`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Subfile`, description: `Fold/truncate mode; key to drop folded lines` },
+    { name: `SFLFOLD`, levels: [`format`], valueMode: `text`, placeholder: `xx`, group: `Subfile`, description: `Display folded (wrapped) subfile records` },
+    { name: `SFLENTER`, levels: [`format`], valueMode: `none`, group: `Subfile`, description: `Enter key selects subfile record (selection list)` },
     // —— Field — Display ——
-    { name: `COLOR`, levels: [`field`], valueMode: `select`, options: COLOR_OPTIONS, group: `Display` },
-    { name: `DSPATR`, levels: [`field`], valueMode: `multi`, options: DSPATR_OPTIONS, group: `Display`, description: `One or more attributes (BL = blink)` },
-    { name: `ENTFLDATR`, levels: [`field`], valueMode: `text`, placeholder: `*COLOR BLU *DSPATR HI`, group: `Display` },
+    { name: `COLOR`, levels: [`field`], valueMode: `select`, options: COLOR_OPTIONS, group: `Display`, description: `Field color on a color display (GRN, WHT, RED, \u2026)` },
+    { name: `DSPATR`, levels: [`field`], valueMode: `multi`, options: DSPATR_OPTIONS, group: `Display`, description: `Display attributes (HI, UL, RI, ND, PR, \u2026)` },
+    { name: `ENTFLDATR`, levels: [`field`], valueMode: `text`, placeholder: `*COLOR BLU *DSPATR HI`, group: `Display`, description: `Attributes while the cursor is in this entry field` },
     // —— Field — Editing ——
-    { name: `EDTCDE`, levels: [`field`], valueMode: `select`, options: EDTCDE_OPTIONS, group: `Editing` },
-    { name: `EDTWRD`, levels: [`field`], valueMode: `text`, placeholder: `'   /   /  '`, group: `Editing` },
-    { name: `DATFMT`, levels: [`field`], valueMode: `select`, options: DATFMT_OPTIONS, group: `Editing` },
-    { name: `DATSEP`, levels: [`field`], valueMode: `select`, options: DATSEP_OPTIONS, group: `Editing` },
-    { name: `TIMFMT`, levels: [`field`], valueMode: `select`, options: TIMFMT_OPTIONS, group: `Editing` },
-    { name: `TIMSEP`, levels: [`field`], valueMode: `select`, options: TIMSEP_OPTIONS, group: `Editing` },
-    { name: `FLTFIXDEC`, levels: [`field`], valueMode: `none`, group: `Editing` },
-    { name: `FLTPCN`, levels: [`field`], valueMode: `select`, options: [opt(`*SINGLE`), opt(`*DOUBLE`)], group: `Editing` },
+    { name: `EDTCDE`, levels: [`field`], valueMode: `select`, options: EDTCDE_OPTIONS, group: `Editing`, description: `Edit code for numeric output formatting` },
+    { name: `EDTWRD`, levels: [`field`], valueMode: `text`, placeholder: `'   /   /  '`, group: `Editing`, description: `Custom edit word for numeric/date formatting` },
+    { name: `DATFMT`, levels: [`field`], valueMode: `select`, options: DATFMT_OPTIONS, group: `Editing`, description: `Date format (*ISO, *USA, *MDY, \u2026)` },
+    { name: `DATSEP`, levels: [`field`], valueMode: `select`, options: DATSEP_OPTIONS, group: `Editing`, description: `Date separator character` },
+    { name: `TIMFMT`, levels: [`field`], valueMode: `select`, options: TIMFMT_OPTIONS, group: `Editing`, description: `Time format (*ISO, *HMS, *USA, \u2026)` },
+    { name: `TIMSEP`, levels: [`field`], valueMode: `select`, options: TIMSEP_OPTIONS, group: `Editing`, description: `Time separator character` },
+    { name: `FLTFIXDEC`, levels: [`field`], valueMode: `none`, group: `Editing`, description: `Display floating-point as fixed decimal` },
+    { name: `FLTPCN`, levels: [`field`], valueMode: `select`, options: [opt(`*SINGLE`), opt(`*DOUBLE`)], group: `Editing`, description: `Floating-point precision (*SINGLE / *DOUBLE)` },
     // —— Field — Validity ——
-    { name: `CHECK`, levels: [`field`], valueMode: `multi`, options: CHECK_OPTIONS, group: `Validity` },
-    { name: `COMP`, levels: [`field`], valueMode: `text`, placeholder: `EQ 'value'`, group: `Validity` },
-    { name: `RANGE`, levels: [`field`], valueMode: `text`, placeholder: `low high`, group: `Validity` },
-    { name: `VALUES`, levels: [`field`], valueMode: `text`, placeholder: `'A' 'B' 'C'`, group: `Validity` },
-    { name: `MAPVAL`, levels: [`field`], valueMode: `text`, placeholder: `(*BLANK 0)`, options: MAPVAL_COMMON, group: `Validity` },
-    { name: `ERRMSG`, levels: [`field`], valueMode: `text`, placeholder: `'message' [xx]`, group: `Validity` },
-    { name: `ERRMSGID`, levels: [`field`], valueMode: `text`, placeholder: `msg-id [lib/msgf] [xx]`, group: `Validity` },
+    { name: `CHECK`, levels: [`field`], valueMode: `multi`, options: CHECK_OPTIONS, group: `Validity`, description: `Input check / keyboard control (ME, MF, RB, LC, \u2026)` },
+    { name: `COMP`, levels: [`field`], valueMode: `text`, placeholder: `EQ 'value'`, group: `Validity`, description: `Compare entered value (EQ, NE, GT, LT, \u2026)` },
+    { name: `RANGE`, levels: [`field`], valueMode: `text`, placeholder: `low high`, group: `Validity`, description: `Valid inclusive low\u2013high range` },
+    { name: `VALUES`, levels: [`field`], valueMode: `text`, placeholder: `'A' 'B' 'C'`, group: `Validity`, description: `List of allowed values` },
+    { name: `MAPVAL`, levels: [`field`], valueMode: `text`, placeholder: `(*BLANK 0)`, options: MAPVAL_COMMON, group: `Validity`, description: `Map special values (*BLANK, *ZERO, \u2026)` },
+    { name: `ERRMSG`, levels: [`field`], valueMode: `text`, placeholder: `'message' [xx]`, group: `Validity`, description: `Error message text when indicator is on` },
+    { name: `ERRMSGID`, levels: [`field`], valueMode: `text`, placeholder: `msg-id [lib/msgf] [xx]`, group: `Validity`, description: `Error message ID from a message file` },
     // —— Field — General ——
-    { name: `DATE`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `TIME`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `SYSNAME`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `USER`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `MSGID`, levels: [`field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `General` },
-    { name: `DFT`, levels: [`field`], valueMode: `text`, placeholder: `'default'`, group: `General` },
-    { name: `DFTVAL`, levels: [`field`], valueMode: `text`, placeholder: `'default'`, group: `General` },
-    { name: `REFFLD`, levels: [`field`], valueMode: `text`, placeholder: `field-name [lib/file]`, group: `General` },
-    { name: `REFSHIFT`, levels: [`field`], valueMode: `select`, options: [opt(`*NUM`), opt(`*STD`), opt(`*ALPHA`), opt(`*KATA`), opt(`*HIRAG`), opt(`*HEX`)], group: `General` },
-    { name: `LOWER`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `AUTO`, levels: [`field`], valueMode: `multi`, options: [opt(`RAB`), opt(`RAZ`), opt(`RA`), opt(`FE`)], group: `General` },
-    { name: `DUP`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `PUTRETAIN`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `INZINP`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `NOCCSID`, levels: [`field`], valueMode: `none`, group: `General` },
-    { name: `PMTCTL`, levels: [`field`], valueMode: `text`, group: `General` },
-    { name: `TEXT`, levels: [`file`, `format`, `field`], valueMode: `text`, placeholder: `'description'`, group: `General` },
-    { name: `ALIAS`, levels: [`field`], valueMode: `text`, placeholder: `alias-name`, group: `General` },
-    { name: `HTML`, levels: [`field`], valueMode: `text`, placeholder: `'html content'`, group: `General`, description: `HTML data for the field` }
+    { name: `DATE`, levels: [`field`], valueMode: `none`, group: `General`, description: `System date constant field` },
+    { name: `TIME`, levels: [`field`], valueMode: `none`, group: `General`, description: `System time constant field` },
+    { name: `SYSNAME`, levels: [`field`], valueMode: `none`, group: `General`, description: `System name constant field` },
+    { name: `USER`, levels: [`field`], valueMode: `none`, group: `General`, description: `User profile name constant field` },
+    { name: `MSGID`, levels: [`field`], valueMode: `text`, placeholder: `msg-id [lib/msgf]`, group: `General`, description: `Message constant from a message file` },
+    { name: `DFT`, levels: [`field`], valueMode: `text`, placeholder: `'default'`, group: `General`, description: `Default value shown until the user changes it` },
+    { name: `DFTVAL`, levels: [`field`], valueMode: `text`, placeholder: `'default'`, group: `General`, description: `Default value returned if the field is blank` },
+    { name: `REFFLD`, levels: [`field`], valueMode: `text`, placeholder: `field-name [lib/file]`, group: `General`, description: `Reference another field\u2019s attributes` },
+    { name: `REFSHIFT`, levels: [`field`], valueMode: `select`, options: [opt(`*NUM`), opt(`*STD`), opt(`*ALPHA`), opt(`*KATA`), opt(`*HIRAG`), opt(`*HEX`)], group: `General`, description: `Keyboard shift for referenced field` },
+    { name: `LOWER`, levels: [`field`], valueMode: `none`, group: `General`, description: `Allow lowercase entry (same as CHECK LC)` },
+    { name: `AUTO`, levels: [`field`], valueMode: `multi`, options: [opt(`RAB`), opt(`RAZ`), opt(`RA`), opt(`FE`)], group: `General`, description: `Auto functions (right-adjust, field exit, \u2026)` },
+    { name: `DUP`, levels: [`field`], valueMode: `none`, group: `General`, description: `Allow Dup key to duplicate field data` },
+    { name: `PUTRETAIN`, levels: [`field`], valueMode: `none`, group: `General`, description: `Retain displayed data on subsequent outputs` },
+    { name: `INZINP`, levels: [`field`], valueMode: `none`, group: `General`, description: `Initialize input fields without always sending data` },
+    { name: `NOCCSID`, levels: [`field`], valueMode: `none`, group: `General`, description: `Do not convert field data with CCSID` },
+    { name: `PMTCTL`, levels: [`field`], valueMode: `text`, group: `General`, description: `Prompt control condition for conditional prompts` },
+    { name: `TEXT`, levels: [`file`, `format`, `field`], valueMode: `text`, placeholder: `'description'`, group: `General`, description: `Descriptive text for the file, record, or field` },
+    { name: `ALIAS`, levels: [`field`], valueMode: `text`, placeholder: `alias-name`, group: `General`, description: `Alternative (long) name for high-level languages` },
+    { name: `HTML`, levels: [`field`], valueMode: `text`, placeholder: `'html content'`, group: `General`, description: `HTML content associated with the field` }
   ];
   for (let i = 1; i <= 24; i++) {
     const n = String(i).padStart(2, `0`);
@@ -492,7 +493,8 @@
           levels: [`format`],
           valueMode: `text`,
           placeholder: `xx ['text']`,
-          group: `Response`
+          group: `Response`,
+          description: prefix === `CA` ? `Command Attention key (no data returned)` : `Command Function key (returns field data)`
         });
       }
     }
@@ -701,16 +703,52 @@
       cell.innerText = label;
       return cell;
     };
-    const createInputCell = (fieldId, value, labelText) => {
+    const createInputCell = (fieldId, value, labelText, constraints) => {
       const cell = document.createElement(`vscode-table-cell`);
-      const input = document.createElement(`code`);
+      const input = document.createElement(`input`);
+      input.type = `text`;
       input.id = fieldId;
       input.className = `prop-input`;
       input.dataset.propId = fieldId;
-      input.innerText = value == null ? `` : String(value);
-      input.setAttribute(`contenteditable`, `true`);
-      input.setAttribute(`role`, `textbox`);
+      input.spellcheck = false;
+      input.autocomplete = `off`;
       input.setAttribute(`aria-label`, labelText || fieldId);
+      let initial = value == null ? `` : String(value);
+      if (constraints?.filter) {
+        initial = constraints.filter(initial);
+      }
+      input.value = initial;
+      if (constraints?.maxLength != null) {
+        input.maxLength = constraints.maxLength;
+      }
+      if (constraints?.title) {
+        input.title = constraints.title;
+        input.setAttribute(`aria-description`, constraints.title);
+      }
+      if (constraints?.inputMode) {
+        input.inputMode = constraints.inputMode;
+      }
+      if (constraints?.filter) {
+        const applyFilter = () => {
+          const before = input.value;
+          const next = constraints.filter(before);
+          if (next === before) {
+            return;
+          }
+          const caret = input.selectionStart;
+          input.value = next;
+          if (typeof caret === `number`) {
+            const delta = before.length - next.length;
+            const pos = Math.max(0, Math.min(next.length, caret - Math.max(0, delta)));
+            try {
+              input.setSelectionRange(pos, pos);
+            } catch {
+            }
+          }
+        };
+        input.addEventListener(`input`, applyFilter);
+        input.addEventListener(`blur`, applyFilter);
+      }
       cell.appendChild(input);
       return cell;
     };
@@ -754,7 +792,7 @@
       if (prop.id && prop.options) {
         row.append(createSelectCell(prop.id, prop.value, prop.options));
       } else if (prop.id) {
-        row.append(createInputCell(prop.id, prop.value, prop.label));
+        row.append(createInputCell(prop.id, prop.value, prop.label, prop.constraints));
       } else {
         row.append(createLabelCell(String(prop.value ?? ``)));
       }
@@ -774,9 +812,9 @@
           if (!propId) {
             return;
           }
-          if (el instanceof HTMLSelectElement) {
+          if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) {
             newProperties[propId] = el.value;
-          } else {
+          } else if (el instanceof HTMLElement) {
             newProperties[propId] = el.innerText;
           }
         });
@@ -795,11 +833,30 @@
   function ensureRightSidebarVisible() {
     const sidebar = document.getElementById(`rightSidebar`);
     const rail = document.getElementById(`expandRightSidebar`);
+    const layout = document.getElementById(`appLayout`);
+    const rightSplitter = document.getElementById(`rightSplitter`);
+    const bottomSplitter = document.getElementById(`bottomSplitter`);
     if (sidebar) {
       sidebar.classList.remove(`collapsed`);
     }
     if (rail) {
       rail.hidden = true;
+    }
+    const dock = layout?.dataset.fieldsDock || `side`;
+    if (dock === `bottom`) {
+      if (bottomSplitter) {
+        bottomSplitter.hidden = false;
+      }
+      if (rightSplitter) {
+        rightSplitter.hidden = true;
+      }
+    } else {
+      if (rightSplitter) {
+        rightSplitter.hidden = false;
+      }
+      if (bottomSplitter) {
+        bottomSplitter.hidden = true;
+      }
     }
   }
   function editKeyword(onUpdate, keyword, level = `field`) {
@@ -1161,7 +1218,13 @@
       }
       if (next instanceof HTMLElement) {
         next.focus();
-        if (next.isContentEditable) {
+        if (next instanceof HTMLInputElement) {
+          const len = next.value.length;
+          try {
+            next.setSelectionRange(len, len);
+          } catch {
+          }
+        } else if (next.isContentEditable) {
           const range = document.createRange();
           range.selectNodeContents(next);
           range.collapse(false);
@@ -1174,12 +1237,13 @@
   }
 
   // src/shared/recordName.ts
+  var FIELD_NAME_MAX = 10;
   var RECORD_NAME_RE = /^[A-Z@#$][A-Z0-9@#$]{0,9}$/;
-  function isValidRecordName2(name) {
+  function isValidRecordName(name) {
     return RECORD_NAME_RE.test((name || ``).trim().toUpperCase());
   }
-  var isValidFieldName = isValidRecordName2;
-  var RECORD_NAME_HINT = `Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $ (must start with a letter or @/#/$).`;
+  var isValidFieldName = isValidRecordName;
+  var RECORD_NAME_HINT = `Use 1\u2013${FIELD_NAME_MAX} characters: A\u2013Z, 0\u20139, @, #, $ (must start with a letter or @/#/$); no spaces.`;
   var FIELD_NAME_HINT = RECORD_NAME_HINT;
   var DDS_MAX_LENGTH = 99999;
   var DDS_MAX_DECIMALS = 99;
@@ -1747,6 +1811,257 @@
     vscode.postMessage({ command: `showError`, message });
   }
 
+  // webui/src/fieldTypeKeywords.js
+  var DATE_TYPE_KEYWORDS = /* @__PURE__ */ new Set([`DATE`, `DATFMT`, `DATSEP`]);
+  var TIME_TYPE_KEYWORDS = /* @__PURE__ */ new Set([`TIME`, `TIMFMT`, `TIMSEP`]);
+  function stripKeywordsForTypeChange(field, prevType, nextType) {
+    const prev = (prevType || ``).toUpperCase();
+    const next = (nextType || ``).toUpperCase();
+    if (prev === next) {
+      return;
+    }
+    const remove = /* @__PURE__ */ new Set();
+    if (prev === `L` && next !== `L`) {
+      DATE_TYPE_KEYWORDS.forEach((n) => remove.add(n));
+    }
+    if (prev === `T` && next !== `T`) {
+      TIME_TYPE_KEYWORDS.forEach((n) => remove.add(n));
+    }
+    if (prev === `R` && next !== `R`) {
+      remove.add(`REFFLD`);
+      field.reference = void 0;
+    }
+    if (remove.size === 0 || !field.keywords?.length) {
+      return;
+    }
+    field.keywords = field.keywords.filter((k) => !remove.has((k.name || ``).toUpperCase()));
+  }
+
+  // src/shared/editValidation.ts
+  var KEYWORD_VALUE_MAX = 256;
+  var CONST_VALUE_MAX = 512;
+
+  // webui/src/propInputLimits.js
+  var LENGTH_INPUT_MAX_CHARS = String(DDS_MAX_LENGTH).length;
+  var DECIMALS_INPUT_MAX_CHARS = String(DDS_MAX_DECIMALS).length;
+  var INDICATOR_INPUT_MAX = 3;
+  var CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+  function filterFieldNameInput(raw) {
+    let s = String(raw ?? ``).toUpperCase().replace(/\s+/g, ``);
+    s = s.replace(/[^A-Z0-9@#$]/g, ``);
+    s = s.replace(/^[0-9]+/, ``);
+    return s.slice(0, FIELD_NAME_MAX);
+  }
+  function filterDigitInput(raw, maxChars) {
+    return String(raw ?? ``).replace(/\D/g, ``).slice(0, maxChars);
+  }
+  function filterIndicatorInput(raw) {
+    const s = String(raw ?? ``).toUpperCase().replace(/\s+/g, ``);
+    if (!s) {
+      return ``;
+    }
+    if (s === `N`) {
+      return `N`;
+    }
+    const m = s.match(/^(N?)(\d{0,2})/);
+    if (!m) {
+      return ``;
+    }
+    return `${m[1] || ``}${m[2] || ``}`.slice(0, INDICATOR_INPUT_MAX);
+  }
+  function filterConstValueInput(raw) {
+    return String(raw ?? ``).replace(/'/g, ``).replace(CONTROL_CHARS, ``).replace(/[\r\n]/g, ``).slice(0, CONST_VALUE_MAX);
+  }
+  function filterReferenceInput(raw) {
+    return String(raw ?? ``).toUpperCase().replace(/[^A-Z0-9@#$./\s]/g, ``).slice(0, KEYWORD_VALUE_MAX);
+  }
+  function fieldPropertyConstraints() {
+    return {
+      name: {
+        maxLength: FIELD_NAME_MAX,
+        filter: filterFieldNameInput,
+        title: FIELD_NAME_HINT
+      },
+      length: {
+        maxLength: LENGTH_INPUT_MAX_CHARS,
+        filter: (raw) => filterDigitInput(raw, LENGTH_INPUT_MAX_CHARS),
+        title: `Length: integer 0\u2013${DDS_MAX_LENGTH} (DDS columns 30\u201334).`,
+        inputMode: `numeric`
+      },
+      decimals: {
+        maxLength: DECIMALS_INPUT_MAX_CHARS,
+        filter: (raw) => filterDigitInput(raw, DECIMALS_INPUT_MAX_CHARS),
+        title: `Decimals: integer 0\u2013${DDS_MAX_DECIMALS} (DDS columns 36\u201337).`,
+        inputMode: `numeric`
+      },
+      value: {
+        maxLength: CONST_VALUE_MAX,
+        filter: filterConstValueInput,
+        title: `Value: up to ${CONST_VALUE_MAX} characters; no single quotes.`
+      },
+      cond1: {
+        maxLength: INDICATOR_INPUT_MAX,
+        filter: filterIndicatorInput,
+        title: `Indicator: blank, 01\u201399, or N01\u2013N99.`
+      },
+      cond2: {
+        maxLength: INDICATOR_INPUT_MAX,
+        filter: filterIndicatorInput,
+        title: `Indicator: blank, 01\u201399, or N01\u2013N99.`
+      },
+      cond3: {
+        maxLength: INDICATOR_INPUT_MAX,
+        filter: filterIndicatorInput,
+        title: `Indicator: blank, 01\u201399, or N01\u2013N99.`
+      },
+      reference: {
+        maxLength: KEYWORD_VALUE_MAX,
+        filter: filterReferenceInput,
+        title: `Reference: field name, optionally followed by library/file (max ${KEYWORD_VALUE_MAX}).`
+      }
+    };
+  }
+
+  // webui/src/coords.js
+  function clampFieldPosition(x, y, opts) {
+    const maxX = Math.max(1, opts.maxX || 1);
+    const maxY = Math.max(1, opts.maxY || 1);
+    const maxStartX = maxStartColumnForLength(maxX, opts.length);
+    let nextX = Math.min(Math.max(1, x), maxStartX);
+    let nextY = Math.min(Math.max(1, y), maxY);
+    if (opts.wasY0) {
+      nextY = 0;
+    }
+    return { x: nextX, y: nextY };
+  }
+  function maxStartColumnForLength(maxX, length) {
+    const cols = Math.max(1, maxX || 1);
+    const len = Math.max(1, length || 1);
+    return Math.max(1, cols - len + 1);
+  }
+  function fieldContentLength(field) {
+    if (!field) {
+      return 1;
+    }
+    const valueLen = String(field.value || ``).length;
+    if (field.displayType === `const`) {
+      const explicit = typeof field.length === `number` && field.length > 0 ? field.length : 0;
+      return Math.max(1, explicit, valueLen);
+    }
+    if (typeof field.length === `number` && field.length > 0) {
+      return field.length;
+    }
+    if (typeof field.resolvedLength === `number` && field.resolvedLength > 0) {
+      return field.resolvedLength;
+    }
+    return Math.max(1, valueLen);
+  }
+  function fieldExtendsPastWidth(startCol, length, maxX) {
+    const x = Number(startCol);
+    const len = Math.max(1, length || 1);
+    const cols = Math.max(1, maxX || 1);
+    if (!Number.isFinite(x)) {
+      return true;
+    }
+    return x + len - 1 > cols;
+  }
+  function validateFieldScreenFit(field, bounds) {
+    if (!field?.position) {
+      return void 0;
+    }
+    const maxX = Math.max(1, bounds?.maxX || 1);
+    const maxY = Math.max(1, bounds?.maxY || 1);
+    const x = field.position.x;
+    const y = field.position.y;
+    const len = fieldContentLength(field);
+    if (!Number.isInteger(x) || x < 1) {
+      return `Column must be an integer from 1 to ${maxX}.`;
+    }
+    if (fieldExtendsPastWidth(x, len, maxX)) {
+      return `Content past record length of ${maxX} (column ${x}, length ${len}). Move left or shorten the field.`;
+    }
+    if (y !== 0 && (!Number.isInteger(y) || y < 0 || y > maxY)) {
+      return `Row must be an integer from 0 to ${maxY}.`;
+    }
+    return void 0;
+  }
+  function fieldDisplaySpan(field) {
+    if (!field?.position) {
+      return void 0;
+    }
+    const row = field.position.y;
+    const start = field.position.x;
+    if (!Number.isInteger(row) || row < 1) {
+      return void 0;
+    }
+    if (!Number.isInteger(start) || start < 1) {
+      return void 0;
+    }
+    const len = fieldContentLength(field);
+    return { row, start, end: start + len - 1 };
+  }
+  function fieldsOverlap(a, b) {
+    const sa = fieldDisplaySpan(a);
+    const sb = fieldDisplaySpan(b);
+    if (!sa || !sb || sa.row !== sb.row) {
+      return false;
+    }
+    return sa.start <= sb.end && sb.start <= sa.end;
+  }
+  function isSameFieldRef(a, b) {
+    if (!a || !b) {
+      return false;
+    }
+    if (a === b) {
+      return true;
+    }
+    const an = (a.name || ``).trim();
+    const bn = (b.name || ``).trim();
+    if (an && bn && an === bn) {
+      return true;
+    }
+    if (Number.isInteger(a.startRange) && Number.isInteger(b.startRange) && a.startRange >= 0 && a.startRange === b.startRange) {
+      return true;
+    }
+    return false;
+  }
+  function fieldDisplayName(field) {
+    const name = (field?.name || ``).trim();
+    if (name) {
+      return name;
+    }
+    if (field?.displayType === `const`) {
+      const v = String(field.value || ``).trim();
+      return v ? `'${v.length > 12 ? `${v.slice(0, 12)}\u2026` : v}'` : `(const)`;
+    }
+    return `(unnamed)`;
+  }
+  function findOverlappingFields(field, peers) {
+    if (!field || !Array.isArray(peers) || peers.length === 0) {
+      return [];
+    }
+    return peers.filter((peer) => {
+      if (isSameFieldRef(field, peer)) {
+        return false;
+      }
+      if (peer?.displayType === `hidden`) {
+        return false;
+      }
+      return fieldsOverlap(field, peer);
+    });
+  }
+  function formatOverlapWarning(field, peers) {
+    const hits = findOverlappingFields(field, peers);
+    if (hits.length === 0) {
+      return void 0;
+    }
+    const names = hits.map((f) => fieldDisplayName(f)).join(`, `);
+    const span = fieldDisplaySpan(field);
+    const where = span ? ` at row ${span.row}, columns ${span.start}\u2013${span.end}` : ``;
+    const verb = hits.length === 1 ? `Overlaps` : `Overlaps`;
+    return `${verb} ${names}${where}. Overlapping fields will not compile.`;
+  }
+
   // webui/src/sidebar.js
   function parseOptionalNonNegInt(raw, label, max) {
     const s = String(raw ?? ``).trim();
@@ -1780,7 +2095,7 @@
     }
     const parts = s.split(/\s+/).filter(Boolean);
     if (parts.length === 1) {
-      if (!isValidRecordName2(parts[0])) {
+      if (!isValidRecordName(parts[0])) {
         return `WINDOW reference must be a valid record name. ${FIELD_NAME_HINT}`;
       }
       return void 0;
@@ -1794,6 +2109,34 @@
       }
     }
     return void 0;
+  }
+  function propLabel(text) {
+    const el = document.createElement(`div`);
+    el.className = `prop-label`;
+    el.textContent = text;
+    return el;
+  }
+  function propRow(label, control) {
+    const row = document.createElement(`div`);
+    row.className = `prop-row`;
+    row.appendChild(propLabel(label));
+    const controlWrap = document.createElement(`div`);
+    controlWrap.className = `prop-control`;
+    controlWrap.appendChild(control);
+    row.appendChild(controlWrap);
+    return row;
+  }
+  function propHint(text) {
+    const hint = document.createElement(`div`);
+    hint.className = `palette-hint prop-hint`;
+    hint.textContent = text;
+    return hint;
+  }
+  function propApplyButton(label) {
+    const apply = document.createElement(`vscode-button`);
+    apply.className = `prop-apply-btn`;
+    apply.innerText = label;
+    return apply;
   }
   function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, overlayFormats2, onFormatUpdate, onOverlayChange, onFileUpdate, onSelectField) {
     const sidebar = document.getElementById(`recordFormatSidebar`);
@@ -1813,13 +2156,8 @@
     const sflCtl = (recordInfo.keywords || []).find((k) => k.name === `SFLCTL`);
     if (sflCtl && onFormatUpdate) {
       const helpers = document.createElement(`div`);
-      helpers.className = `sfl-helpers`;
-      helpers.style.padding = `0.5em`;
-      const hint = document.createElement(`div`);
-      hint.className = `palette-hint`;
-      hint.style.padding = `0`;
-      hint.innerText = `Edit rows on the ${sflCtl.value || `SFL`} tab. Adjust page size here.`;
-      helpers.appendChild(hint);
+      helpers.className = `panel-section sfl-helpers`;
+      helpers.appendChild(propHint(`Edit rows on the ${sflCtl.value || `SFL`} tab. Adjust page size here.`));
       const pag = (recordInfo.keywords || []).find((k) => k.name === `SFLPAG`);
       const siz = (recordInfo.keywords || []).find((k) => k.name === `SFLSIZ`);
       const endKw = (recordInfo.keywords || []).find((k) => k.name === `SFLEND`);
@@ -1838,23 +2176,10 @@
         }
         endSelect.appendChild(opt2);
       }
-      const lab = (t) => {
-        const el = document.createElement(`div`);
-        el.style.fontSize = `11px`;
-        el.style.marginTop = `0.4em`;
-        el.innerText = t;
-        return el;
-      };
-      helpers.appendChild(lab(`SFLPAG`));
-      helpers.appendChild(pagInput);
-      helpers.appendChild(lab(`SFLSIZ`));
-      helpers.appendChild(sizInput);
-      helpers.appendChild(lab(`SFLEND`));
-      helpers.appendChild(endSelect);
-      const apply = document.createElement(`vscode-button`);
-      apply.innerText = `Apply subfile sizes`;
-      apply.style.marginTop = `0.5em`;
-      apply.style.display = `block`;
+      helpers.appendChild(propRow(`SFLPAG`, pagInput));
+      helpers.appendChild(propRow(`SFLSIZ`, sizInput));
+      helpers.appendChild(propRow(`SFLEND`, endSelect));
+      const apply = propApplyButton(`Apply subfile sizes`);
       apply.onclick = () => {
         const pEl = pagInput;
         const sEl = sizInput;
@@ -1903,12 +2228,8 @@
     const winKw = (recordInfo.keywords || []).find((k) => k.name === `WINDOW`);
     if (winKw && onFormatUpdate) {
       const helpers = document.createElement(`div`);
-      helpers.style.padding = `0.5em`;
-      const hint = document.createElement(`div`);
-      hint.className = `palette-hint`;
-      hint.style.padding = `0`;
-      hint.innerText = `Drag the blue handle on the canvas to resize, or edit WINDOW / title / border here.`;
-      helpers.appendChild(hint);
+      helpers.className = `panel-section`;
+      helpers.appendChild(propHint(`Drag the blue handle on the canvas to resize, or edit WINDOW / title / border here.`));
       const winInput = document.createElement(`vscode-textfield`);
       winInput.setAttribute(`value`, winKw.value || `5 10 12 40`);
       const titleKw = (recordInfo.keywords || []).find((k) => k.name === `WDWTITLE`);
@@ -1927,23 +2248,10 @@
         }
         borderColor.appendChild(o);
       }
-      const lab = (t) => {
-        const el = document.createElement(`div`);
-        el.style.fontSize = `11px`;
-        el.style.marginTop = `0.4em`;
-        el.innerText = t;
-        return el;
-      };
-      helpers.appendChild(lab(`WINDOW (row col height width)`));
-      helpers.appendChild(winInput);
-      helpers.appendChild(lab(`WDWTITLE`));
-      helpers.appendChild(titleInput);
-      helpers.appendChild(lab(`WDWBORDER *COLOR`));
-      helpers.appendChild(borderColor);
-      const apply = document.createElement(`vscode-button`);
-      apply.innerText = `Apply window`;
-      apply.style.marginTop = `0.5em`;
-      apply.style.display = `block`;
+      helpers.appendChild(propRow(`WINDOW (row col height width)`, winInput));
+      helpers.appendChild(propRow(`WDWTITLE`, titleInput));
+      helpers.appendChild(propRow(`WDWBORDER *COLOR`, borderColor));
+      const apply = propApplyButton(`Apply window`);
       apply.onclick = () => {
         const wEl = winInput;
         const tEl = titleInput;
@@ -1979,9 +2287,10 @@
     fieldList.className = `field-list`;
     const fields = (recordInfo.fields || []).filter((f) => f.displayType !== `hidden`);
     if (fields.length === 0) {
-      fieldList.innerText = `No fields yet`;
-      fieldList.style.padding = `0.5em`;
-      fieldList.style.opacity = `0.7`;
+      const empty = document.createElement(`div`);
+      empty.className = `panel-empty`;
+      empty.textContent = `No fields yet`;
+      fieldList.appendChild(empty);
     } else {
       for (const f of fields) {
         const row = document.createElement(`button`);
@@ -2000,17 +2309,16 @@
     }
     sections.push({ title: `Fields`, html: fieldList, open: false });
     const overlayDiv = document.createElement(`div`);
-    overlayDiv.style.padding = `0.5em`;
+    overlayDiv.className = `panel-section overlay-list`;
     const formats = allFormats.filter((f) => f.name !== `_GLOBAL` && f.name !== recordInfo.name);
     if (formats.length > 0) {
       const label = document.createElement(`div`);
-      label.innerText = `Overlay formats:`;
-      label.style.marginBottom = `0.4em`;
+      label.className = `prop-label`;
+      label.textContent = `Overlay formats`;
       overlayDiv.appendChild(label);
       for (const f of formats) {
         const row = document.createElement(`label`);
-        row.style.display = `block`;
-        row.style.fontSize = `12px`;
+        row.className = `overlay-list-item`;
         const cb = document.createElement(`input`);
         cb.type = `checkbox`;
         cb.checked = overlayFormats2.includes(f.name);
@@ -2023,7 +2331,10 @@
         overlayDiv.appendChild(row);
       }
     } else {
-      overlayDiv.innerText = `No other formats to overlay`;
+      const empty = document.createElement(`div`);
+      empty.className = `panel-empty`;
+      empty.textContent = `No other formats to overlay`;
+      overlayDiv.appendChild(empty);
     }
     sections.push({
       title: `Overlays`,
@@ -2032,6 +2343,7 @@
     });
     const indicatorHost = document.createElement(`div`);
     indicatorHost.id = `indicatorPanelHost`;
+    indicatorHost.className = `panel-section`;
     sections.push({
       title: `Runtime Indicators`,
       html: indicatorHost,
@@ -2072,6 +2384,7 @@
   var NUMERIC_DDS_TYPES = /* @__PURE__ */ new Set([`S`, `P`, `Y`, `F`, `I`, `U`, `B`]);
   function normalizeFieldProps(fieldInfo, newProps) {
     const prevDisplay = fieldInfo.displayType;
+    const prevType = (fieldInfo.type || ``).toUpperCase();
     let length = fieldInfo.length;
     if (newProps.length !== void 0) {
       const parsed = parseOptionalNonNegInt(newProps.length, `Length`, DDS_MAX_LENGTH);
@@ -2148,6 +2461,7 @@
     } else if (next.displayType !== `const`) {
       next.primitiveType = `char`;
     }
+    stripKeywordsForTypeChange(next, prevType, typeUpper);
     const parseCond = (raw) => {
       const s = String(raw || ``).trim().toUpperCase();
       if (!s) {
@@ -2168,10 +2482,11 @@
     }
     return { ok: true, field: next };
   }
-  function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
+  function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts = {}) {
     const sidebar = document.getElementById(`fieldInfoSidebar`);
+    const limits = fieldPropertyConstraints();
     const properties = [
-      { label: `Name`, value: fieldInfo.name || ``, id: `name` },
+      { label: `Name`, value: fieldInfo.name || ``, id: `name`, constraints: limits.name },
       {
         label: `Display Type`,
         value: fieldInfo.displayType || `output`,
@@ -2184,33 +2499,47 @@
         id: `type`,
         options: DDS_TYPE_OPTIONS
       },
-      { label: `Length`, value: fieldInfo.length ?? ``, id: `length` },
-      { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals` },
-      { label: `Value`, value: fieldInfo.value ?? ``, id: `value` },
+      { label: `Length`, value: fieldInfo.length ?? ``, id: `length`, constraints: limits.length },
+      { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals`, constraints: limits.decimals },
+      { label: `Value`, value: fieldInfo.value ?? ``, id: `value`, constraints: limits.value },
       { label: `Position`, value: `${fieldInfo.position.x}, ${fieldInfo.position.y}` },
       {
         label: `Ind 1`,
         value: fieldInfo.conditions?.[0] ? `${fieldInfo.conditions[0].negate ? `N` : ``}${fieldInfo.conditions[0].indicator}` : ``,
-        id: `cond1`
+        id: `cond1`,
+        constraints: limits.cond1
       },
       {
         label: `Ind 2`,
         value: fieldInfo.conditions?.[1] ? `${fieldInfo.conditions[1].negate ? `N` : ``}${fieldInfo.conditions[1].indicator}` : ``,
-        id: `cond2`
+        id: `cond2`,
+        constraints: limits.cond2
       },
       {
         label: `Ind 3`,
         value: fieldInfo.conditions?.[2] ? `${fieldInfo.conditions[2].negate ? `N` : ``}${fieldInfo.conditions[2].indicator}` : ``,
-        id: `cond3`
+        id: `cond3`,
+        constraints: limits.cond3
       }
     ];
     if (fieldInfo.isReference || fieldInfo.reference || (fieldInfo.type || ``).toUpperCase() === `R`) {
       properties.push({
         label: `Reference`,
         value: fieldInfo.reference || ``,
-        id: `reference`
+        id: `reference`,
+        constraints: limits.reference
       });
     }
+    const keywordsHost = document.createElement(`div`);
+    keywordsHost.className = `keywords-section`;
+    if (opts.generalTools) {
+      keywordsHost.appendChild(opts.generalTools);
+    }
+    keywordsHost.appendChild(
+      createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
+        onUpdate({ ...fieldInfo, keywords });
+      }, `field`)
+    );
     const sections = [
       {
         title: `Properties`,
@@ -2221,23 +2550,35 @@
             showHostError(result.error);
             return;
           }
+          if (opts.bounds) {
+            const fitError = validateFieldScreenFit(result.field, opts.bounds);
+            if (fitError) {
+              showHostError(fitError);
+              return;
+            }
+          }
           onUpdate(result.field);
         })
       },
       {
         title: `Keywords`,
-        open: (fieldInfo.keywords || []).length > 0,
-        html: createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
-          onUpdate({ ...fieldInfo, keywords });
-        }, `field`)
+        open: true,
+        html: keywordsHost
       }
     ];
     renderSections(sidebar, sections);
+    const overlapMsg = formatOverlapWarning(fieldInfo, opts.peerFields);
+    if (overlapMsg) {
+      const warn = document.createElement(`div`);
+      warn.className = `panel-overlap-warning`;
+      warn.setAttribute(`role`, `alert`);
+      warn.textContent = overlapMsg;
+      sidebar.insertBefore(warn, sidebar.firstChild);
+    }
     const deleteButton = document.createElement(`vscode-button`);
     deleteButton.setAttribute(`secondary`, `true`);
+    deleteButton.className = `panel-delete-btn`;
     deleteButton.innerText = `Delete`;
-    deleteButton.style.margin = `1em`;
-    deleteButton.style.display = `block`;
     deleteButton.addEventListener(`click`, onDelete);
     sidebar.appendChild(deleteButton);
   }
@@ -2254,19 +2595,31 @@
     });
   }
 
-  // webui/src/coords.js
-  function clampFieldPosition(x, y, opts) {
-    const maxX = Math.max(1, opts.maxX || 1);
-    const maxY = Math.max(1, opts.maxY || 1);
-    let nextX = Math.min(Math.max(1, x), maxX);
-    let nextY = Math.min(Math.max(1, y), maxY);
-    if (opts.wasY0) {
-      nextY = 0;
-    }
-    return { x: nextX, y: nextY };
-  }
-
   // webui/src/renderer.js
+  var designErrorTimer = void 0;
+  var designErrorVisible = void 0;
+  function showDesignError(message) {
+    const el = document.getElementById(`designErrorToast`);
+    if (el) {
+      const wasHidden = el.hidden || designErrorVisible !== message;
+      el.textContent = message;
+      el.hidden = false;
+      if (wasHidden) {
+        announce(message);
+      }
+      designErrorVisible = message;
+      if (designErrorTimer) {
+        clearTimeout(designErrorTimer);
+      }
+      designErrorTimer = setTimeout(() => {
+        designErrorTimer = void 0;
+        designErrorVisible = void 0;
+        el.hidden = true;
+      }, 3200);
+    } else {
+      announce(message);
+    }
+  }
   var activeDocument = void 0;
   var activeDocumentType = `dds.dspf`;
   var lastSelectedFormat = void 0;
@@ -2291,6 +2644,18 @@
     const prevSelection = selectedItems.map((s) => s.field.name).filter(Boolean);
     activeDocument = newDoc;
     activeDocumentType = type || `dds.dspf`;
+    if (opts.selectFormat) {
+      lastSelectedFormat = opts.selectFormat;
+      editorMode = `design`;
+      const badge = document.getElementById(`modeBadge`);
+      if (badge) {
+        badge.innerText = `Design`;
+      }
+      const modeBtn = document.getElementById(`modeToggle`);
+      if (modeBtn) {
+        modeBtn.innerText = `Switch to Preview`;
+      }
+    }
     if (withRerender) {
       if (opts.restoreSelection) {
         pendingSelectionNames = prevSelection;
@@ -2305,9 +2670,6 @@
   }
   function getEditorMode() {
     return editorMode;
-  }
-  function requestShowSource() {
-    vscode.postMessage({ command: `showSource` });
   }
   function setConnectionConnected(connected) {
     connectionConnected = !!connected;
@@ -2336,6 +2698,35 @@
     if (lastSelectedFormat) {
       setWindowForFormat(lastSelectedFormat);
     }
+  }
+  function selectRecordFormat(formatName) {
+    const name = (formatName || ``).trim();
+    if (!name || !activeDocument) {
+      return;
+    }
+    const exists = activeDocument.formats.some(
+      (f) => f.name === name && f.name !== GLOBAL_RECORD_FORMAT
+    );
+    if (!exists) {
+      return;
+    }
+    editorMode = `design`;
+    const badge = document.getElementById(`modeBadge`);
+    if (badge) {
+      badge.innerText = `Design`;
+    }
+    const modeBtn = document.getElementById(`modeToggle`);
+    if (modeBtn) {
+      modeBtn.innerText = `Switch to Preview`;
+    }
+    if (name === lastSelectedFormat) {
+      setWindowForFormat(name);
+      return;
+    }
+    overlayFormats = [];
+    clearAllIndicators();
+    clearKeywordEditor();
+    setWindowForFormat(name);
   }
   function setScreenSize(cols, rows) {
     if (cols == null || rows == null) {
@@ -2366,7 +2757,8 @@
     return clampFieldPosition(x, y, {
       maxX,
       maxY,
-      wasY0: opts.wasY0 || opts.preserveY0
+      wasY0: opts.wasY0 || opts.preserveY0,
+      length: opts.length
     });
   }
   function currentPositionBounds() {
@@ -2587,7 +2979,25 @@
       const y = e.clientY - rect.top - RULER_TOP;
       const snapped = snapToFixedGrid(Math.max(0, x), Math.max(0, y));
       const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-      field.position = screenToFieldPosition(screen.x, screen.y);
+      const bounds = currentPositionBounds();
+      const len = fieldContentLength(field);
+      let rawX = screen.x;
+      let rawY = screen.y;
+      if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
+        rawX = screen.x - (activeWindowOrigin.originX - 1);
+        rawY = screen.y - (activeWindowOrigin.originY - 1);
+      }
+      const nextPos = clampFieldPosition(rawX, rawY, { ...bounds, length: len });
+      if (rawX > nextPos.x) {
+        showDesignError(
+          `Content past record length of ${bounds.maxX} (length ${len}). Placed at column ${nextPos.x}.`
+        );
+      }
+      field.position = nextPos;
+      const overlapMsg = formatOverlapWarning(field, [...currentFormatFields(), field]);
+      if (overlapMsg) {
+        showDesignError(overlapMsg);
+      }
       sendNewField(lastSelectedFormat, field);
     };
     fieldLayer.add(bg);
@@ -2977,6 +3387,30 @@
       }
     });
   }
+  function applyDatePreview(labelInfo, keywords) {
+    const dateSep = keywords.find((k) => k.name === `DATSEP`);
+    const dateFormat = keywords.find((k) => k.name === `DATFMT`);
+    if (dateFormat) {
+      labelInfo.value = dateFormats[dateFormat.value] || `?FORMAT?`;
+      if (dateSep && String(dateSep.value || ``).toUpperCase() !== `*JOB`) {
+        labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), dateSep.value);
+      }
+    } else {
+      labelInfo.value = dateFormats[`*ISO`];
+    }
+  }
+  function applyTimePreview(labelInfo, keywords) {
+    const sep = keywords.find((k) => k.name === `TIMSEP`);
+    const format = keywords.find((k) => k.name === `TIMFMT`);
+    if (format) {
+      labelInfo.value = timeFormats[format.value] || `?FORMAT?`;
+      if (sep && String(sep.value || ``).toUpperCase() !== `*JOB`) {
+        labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), sep.value);
+      }
+    } else {
+      labelInfo.value = timeFormats[`*HMS`];
+    }
+  }
   function getElement(fieldInfo, displayOnly = false, windowOrigin = void 0) {
     const keywords = fieldInfo.keywords || [];
     const effectiveKeywords = keywords.filter((k) => {
@@ -3020,32 +3454,12 @@
         case `USER`:
           labelInfo.value = `USERNAME__`;
           break;
-        case `DATE`: {
-          const dateSep = effectiveKeywords.find((k) => k.name === `DATSEP`);
-          const dateFormat = effectiveKeywords.find((k) => k.name === `DATFMT`);
-          if (dateFormat) {
-            labelInfo.value = dateFormats[dateFormat.value] || `?FORMAT?`;
-            if (dateSep && dateSep.value.toUpperCase() !== `*JOB`) {
-              labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), dateSep.value);
-            }
-          } else {
-            labelInfo.value = dateFormats[`*ISO`];
-          }
+        case `DATE`:
+          applyDatePreview(labelInfo, effectiveKeywords);
           break;
-        }
-        case `TIME`: {
-          const sep = effectiveKeywords.find((k) => k.name === `TIMSEP`);
-          const format = effectiveKeywords.find((k) => k.name === `TIMFMT`);
-          if (format) {
-            labelInfo.value = timeFormats[format.value] || `?FORMAT?`;
-            if (sep && sep.value.toUpperCase() !== `*JOB`) {
-              labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), sep.value);
-            }
-          } else {
-            labelInfo.value = timeFormats[`*HMS`];
-          }
+        case `TIME`:
+          applyTimePreview(labelInfo, effectiveKeywords);
           break;
-        }
         case `UNDERLINE`:
           labelInfo.textDecoration = `underline`;
           break;
@@ -3076,6 +3490,12 @@
           break;
       }
     });
+    const fieldType = (fieldInfo.type || ``).toUpperCase();
+    if (fieldType === `L` && !effectiveKeywords.some((k) => k.name === `DATE`)) {
+      applyDatePreview(labelInfo, effectiveKeywords);
+    } else if (fieldType === `T` && !effectiveKeywords.some((k) => k.name === `TIME`)) {
+      applyTimePreview(labelInfo, effectiveKeywords);
+    }
     const edtcde = effectiveKeywords.find((k) => k.name === `EDTCDE`);
     const edtwrd = effectiveKeywords.find((k) => k.name === `EDTWRD`);
     if ((edtcde || edtwrd) && fieldInfo.primitiveType === `decimal`) {
@@ -3126,25 +3546,37 @@
       labelInfo.opacity = 0.7;
     }
     let group = new Konva.Group(boxInfo);
+    const dragLength = fieldContentLength(fieldInfo);
     group.on("dragmove", (e) => {
       const cGroup = e.target;
       const boxPos = cGroup.absolutePosition();
       let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+      const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
+      const hitRight = snapped.x > widthInP(maxStartCol - 1);
+      const hitBottom = snapped.y > heightInP(renderRows - 1);
       snapped = {
-        x: Math.min(Math.max(0, snapped.x), widthInP(renderCols - 1)),
+        x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
         y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1))
       };
       cGroup.absolutePosition({
         x: snapped.x + RULER_LEFT,
         y: snapped.y + RULER_TOP
       });
+      if (hitRight) {
+        showDesignError(
+          `Content past record length of ${renderCols} (length ${dragLength}).`
+        );
+      } else if (hitBottom) {
+        showDesignError(`Row must be between 1 and ${renderRows}.`);
+      }
     });
     group.on(`dragend`, (e) => {
       const cGroup = e.target;
       const boxPos = cGroup.absolutePosition();
       let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+      const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
       snapped = {
-        x: Math.min(Math.max(0, snapped.x), widthInP(renderCols - 1)),
+        x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
         y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1))
       };
       cGroup.absolutePosition({
@@ -3152,22 +3584,53 @@
         y: snapped.y + RULER_TOP
       });
       const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-      const newPos = screenToFieldPosition(screen.x, screen.y, { wasY0: fieldInfo.position.y === 0 });
+      const newPos = screenToFieldPosition(screen.x, screen.y, {
+        wasY0: fieldInfo.position.y === 0,
+        length: dragLength
+      });
       const dx = newPos.x - fieldInfo.position.x;
       const dy = fieldInfo.position.y === 0 ? 0 : newPos.y - fieldInfo.position.y;
       const moving = selectedItems.some((s) => s.field.name === fieldInfo.name) && selectedItems.length > 1 ? selectedItems : [{ group: cGroup, field: fieldInfo }];
       const bounds = currentPositionBounds();
-      const updates = moving.map(({ field }) => ({
-        originalFieldName: field.name,
-        fieldInfo: {
-          ...field,
-          position: clampFieldPosition(
-            field.position.x + dx,
-            field.position.y === 0 ? 0 : field.position.y + dy,
-            { ...bounds, wasY0: field.position.y === 0 }
-          )
+      let clampedAny = false;
+      const updates = moving.map(({ field }) => {
+        const len = fieldContentLength(field);
+        const rawX = field.position.x + dx;
+        const rawY = field.position.y === 0 ? 0 : field.position.y + dy;
+        const position = clampFieldPosition(rawX, rawY, {
+          ...bounds,
+          wasY0: field.position.y === 0,
+          length: len
+        });
+        if (rawX > position.x || rawY > 0 && rawY > position.y) {
+          clampedAny = true;
         }
-      }));
+        return {
+          originalFieldName: field.name,
+          fieldInfo: {
+            ...field,
+            position
+          }
+        };
+      });
+      if (clampedAny) {
+        showDesignError(
+          `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`
+        );
+      }
+      const peers = currentFormatFields().map((f) => {
+        const moved = updates.find(
+          (u) => u.originalFieldName === f.name || isSameFieldRef(u.fieldInfo, f)
+        );
+        return moved ? moved.fieldInfo : f;
+      });
+      for (const u of updates) {
+        const overlapMsg = formatOverlapWarning(u.fieldInfo, peers);
+        if (overlapMsg) {
+          showDesignError(overlapMsg);
+          break;
+        }
+      }
       if (updates.length === 1) {
         fieldInfo.position.x = updates[0].fieldInfo.position.x;
         fieldInfo.position.y = updates[0].fieldInfo.position.y;
@@ -3178,7 +3641,7 @@
     });
     group.add(new Konva.Rect({
       id: `bg`,
-      fill: colours.BLK,
+      fill: fieldBackgroundColour(fieldInfo, false),
       x: 0,
       y: 0,
       width: boxInfo.width,
@@ -3202,8 +3665,42 @@
           setActiveField(group, fieldInfo);
         }
       });
+      group.on(`dblclick`, (e) => {
+        e.cancelBubble = true;
+        revealFieldInSource(fieldInfo);
+      });
+      group.on(`dbltap`, (e) => {
+        e.cancelBubble = true;
+        revealFieldInSource(fieldInfo);
+      });
     }
     return group;
+  }
+  function fieldSourceRange(field) {
+    if (!field) {
+      return void 0;
+    }
+    const owned = Array.isArray(field.ownedLines) && field.ownedLines.length > 0 ? field.ownedLines.filter((n) => Number.isInteger(n) && n >= 0) : null;
+    const start = owned && owned.length > 0 ? Math.min(...owned) : field.startRange;
+    const end = owned && owned.length > 0 ? Math.max(...owned) : field.endRange ?? field.startRange;
+    if (!Number.isInteger(start) || start < 0) {
+      return void 0;
+    }
+    if (!Number.isInteger(end) || end < start) {
+      return void 0;
+    }
+    return { startLine: start, endLine: end };
+  }
+  function revealFieldInSource(field) {
+    const range = fieldSourceRange(field);
+    if (!range) {
+      return;
+    }
+    vscode.postMessage({
+      command: `revealInSource`,
+      startLine: range.startLine,
+      endLine: range.endLine
+    });
   }
   function findFieldByName(name) {
     if (!activeDocument || !lastSelectedFormat) {
@@ -3212,11 +3709,27 @@
     const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
     return format?.fields.find((f) => f.name === name);
   }
+  function currentFormatFields() {
+    if (!activeDocument || !lastSelectedFormat) {
+      return [];
+    }
+    const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
+    return format?.fields || [];
+  }
+  function fieldBackgroundColour(field, selected) {
+    if (selected) {
+      return SELECTED_COLOUR;
+    }
+    if (formatOverlapWarning(field, currentFormatFields())) {
+      return OVERLAP_COLOUR;
+    }
+    return colours.BLK;
+  }
   function clearSelection(updatePalette = true) {
-    selectedItems.forEach(({ group }) => {
+    selectedItems.forEach(({ group, field }) => {
       const bg = group.findOne(`#bg`);
       if (bg) {
-        bg.fill(colours.BLK);
+        bg.fill(fieldBackgroundColour(field, false));
       }
     });
     selectedItems = [];
@@ -3231,20 +3744,18 @@
       updateSelectedFieldSidebar(
         selected.field,
         (field) => sendFieldUpdate(lastSelectedFormat, originalFieldName, field),
-        () => sendDelete(lastSelectedFormat, originalFieldName)
+        () => sendDelete(lastSelectedFormat, originalFieldName),
+        {
+          generalTools: createSelectionTools(false),
+          bounds: currentPositionBounds(),
+          peerFields: currentFormatFields()
+        }
       );
-      prependSelectionTools(document.getElementById(`fieldInfoSidebar`), false);
       if (!opts.silent) {
         announce(`Selected ${selected.field.name || `constant`} at row ${selected.field.position?.y}, column ${selected.field.position?.x}`);
       }
     } else if (selectedItems.length > 1) {
-      const sidebar = document.getElementById(`fieldInfoSidebar`);
-      sidebar.innerHTML = ``;
-      const count = document.createElement(`div`);
-      count.style.padding = `1em`;
-      count.innerText = `${selectedItems.length} fields selected`;
-      sidebar.appendChild(count);
-      prependSelectionTools(sidebar, true);
+      updateMultiSelectSidebar();
       if (!opts.silent) {
         announce(`${selectedItems.length} fields selected`);
       }
@@ -3253,13 +3764,38 @@
     } else {
       const sidebar = document.getElementById(`fieldInfoSidebar`);
       if (sidebar) {
-        sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
+        sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
       }
     }
   }
-  function prependSelectionTools(sidebar, multi) {
-    if (!sidebar || !editsAllowed()) {
+  function updateMultiSelectSidebar() {
+    const sidebar = document.getElementById(`fieldInfoSidebar`);
+    if (!sidebar) {
       return;
+    }
+    const header = document.createElement(`div`);
+    header.className = `panel-section-header`;
+    header.textContent = `${selectedItems.length} fields selected`;
+    const sections = [];
+    const tools = createSelectionTools(true);
+    if (tools) {
+      sections.push({ title: `Keywords`, open: true, html: tools });
+    }
+    renderSections(sidebar, sections);
+    sidebar.insertBefore(header, sidebar.firstChild);
+    const peers = currentFormatFields();
+    const overlapNotes = selectedItems.map(({ field }) => formatOverlapWarning(field, peers)).filter(Boolean);
+    if (overlapNotes.length > 0) {
+      const warn = document.createElement(`div`);
+      warn.className = `panel-overlap-warning`;
+      warn.setAttribute(`role`, `alert`);
+      warn.textContent = [...new Set(overlapNotes)].join(` `);
+      sidebar.insertBefore(warn, header.nextSibling);
+    }
+  }
+  function createSelectionTools(multi) {
+    if (!editsAllowed()) {
+      return void 0;
     }
     const tools = document.createElement(`div`);
     tools.className = `selection-tools`;
@@ -3285,7 +3821,8 @@
     const colorRow = document.createElement(`div`);
     colorRow.className = `selection-tools-row`;
     const colorSelect = document.createElement(`select`);
-    colorSelect.className = `prop-select`;
+    colorSelect.className = `prop-select selection-color-select`;
+    colorSelect.setAttribute(`aria-label`, `COLOR`);
     colorSelect.innerHTML = `<option value="">COLOR\u2026</option>`;
     for (const c of [`GRN`, `WHT`, `RED`, `TRQ`, `YLW`, `PNK`, `BLU`]) {
       const o = document.createElement(`option`);
@@ -3304,11 +3841,12 @@
       const btn = document.createElement(`vscode-button`);
       btn.setAttribute(`secondary`, `true`);
       btn.innerText = atr;
+      btn.title = `DSPATR(${atr})`;
       btn.onclick = () => applyKeywordToSelection(`DSPATR`, atr, true);
       colorRow.appendChild(btn);
     }
     tools.appendChild(colorRow);
-    sidebar.insertBefore(tools, sidebar.firstChild);
+    return tools;
   }
   function alignSelectedFields(mode) {
     if (!selectedItems.length || !editsAllowed()) {
@@ -3319,12 +3857,12 @@
     const updates = [];
     if (mode === `center` && selectedItems.length === 1) {
       const item = selectedItems[0];
-      const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
+      const len = fieldContentLength(item.field);
       const next = JSON.parse(JSON.stringify(item.field));
       next.position = clampFieldPosition(
         Math.floor((cols - len) / 2) + 1,
         next.position.y,
-        { ...bounds, wasY0: next.position.y === 0 }
+        { ...bounds, wasY0: next.position.y === 0, length: len }
       );
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
     } else if (mode === `left` || mode === `right` || mode === `top`) {
@@ -3332,9 +3870,11 @@
       const ys = selectedItems.map((s) => s.field.position.y).filter((y) => y > 0);
       const targetX = mode === `left` ? Math.min(...xs) : mode === `right` ? Math.max(...xs) : void 0;
       const targetY = mode === `top` && ys.length > 0 ? Math.min(...ys) : void 0;
+      let clampedAny = false;
       for (const item of selectedItems) {
         const next = JSON.parse(JSON.stringify(item.field));
         const wasY0 = next.position.y === 0;
+        const len = fieldContentLength(next);
         let x = next.position.x;
         let y = next.position.y;
         if (targetX != null) {
@@ -3343,17 +3883,26 @@
         if (targetY != null && !wasY0) {
           y = targetY;
         }
-        next.position = clampFieldPosition(x, y, { ...bounds, wasY0 });
+        const position = clampFieldPosition(x, y, { ...bounds, wasY0, length: len });
+        if (x > position.x) {
+          clampedAny = true;
+        }
+        next.position = position;
         updates.push({ originalFieldName: item.field.name, fieldInfo: next });
+      }
+      if (clampedAny) {
+        showDesignError(
+          `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`
+        );
       }
     } else if (mode === `center` && selectedItems.length > 1) {
       for (const item of selectedItems) {
-        const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
+        const len = fieldContentLength(item.field);
         const next = JSON.parse(JSON.stringify(item.field));
         next.position = clampFieldPosition(
           Math.floor((cols - len) / 2) + 1,
           next.position.y,
-          { ...bounds, wasY0: next.position.y === 0 }
+          { ...bounds, wasY0: next.position.y === 0, length: len }
         );
         updates.push({ originalFieldName: item.field.name, fieldInfo: next });
       }
@@ -3404,7 +3953,7 @@
     selectedItems.push({ group, field: fieldInfo });
     const bg = group.findOne(`#bg`);
     if (bg) {
-      bg.fill(SELECTED_COLOUR);
+      bg.fill(fieldBackgroundColour(fieldInfo, true));
     }
     if (updateUi) {
       updateSelectionUi();
@@ -3415,13 +3964,13 @@
     if (idx >= 0) {
       const bg = selectedItems[idx].group.findOne(`#bg`);
       if (bg) {
-        bg.fill(colours.BLK);
+        bg.fill(fieldBackgroundColour(selectedItems[idx].field, false));
       }
       selectedItems.splice(idx, 1);
       updateSelectionUi();
-    } else {
-      addToSelection(group, fieldInfo);
+      return;
     }
+    addToSelection(group, fieldInfo);
   }
   function setActiveField(konvaElement, fieldInfo) {
     clearKeywordEditor();
@@ -3481,7 +4030,10 @@
     }
   }
   function activateFormatTab(formatName) {
-    if (!formatName || formatName === lastSelectedFormat) {
+    if (!formatName) {
+      return;
+    }
+    if (formatName === lastSelectedFormat) {
       return;
     }
     overlayFormats = [];
@@ -3620,7 +4172,7 @@
       if (name === formatName.toUpperCase()) {
         return;
       }
-      if (!isValidRecordName2(name)) {
+      if (!isValidRecordName(name)) {
         showHostError(`Invalid record name. Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $.`);
         return;
       }
@@ -3657,7 +4209,7 @@
         return;
       }
       const name = next.trim().toUpperCase();
-      if (!isValidRecordName2(name)) {
+      if (!isValidRecordName(name)) {
         showHostError(`Invalid record name. Use 1\u201310 characters: A\u2013Z, 0\u20139, @, #, $.`);
         return;
       }
@@ -3809,10 +4361,11 @@
           const fields = clipboard.map((field) => {
             const copy = JSON.parse(JSON.stringify(field));
             const wasY0 = field.position.y === 0;
+            const len = fieldContentLength(copy);
             copy.position = clampFieldPosition(
               field.position.x,
               wasY0 ? 0 : field.position.y + 1,
-              { ...bounds2, wasY0 }
+              { ...bounds2, wasY0, length: len }
             );
             const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
             copy.name = uniqueFieldName(`${base}_C`, existing);
@@ -3897,13 +4450,20 @@
       }
       e.preventDefault();
       const bounds = currentPositionBounds();
+      let clampedAny = false;
       const updates = selectedItems.map(({ field, group }) => {
         const wasY0 = field.position.y === 0;
-        const nextPos = clampFieldPosition(
-          field.position.x + dx,
-          wasY0 ? 0 : field.position.y + dy,
-          { ...bounds, wasY0 }
-        );
+        const len = fieldContentLength(field);
+        const rawX = field.position.x + dx;
+        const rawY = wasY0 ? 0 : field.position.y + dy;
+        const nextPos = clampFieldPosition(rawX, rawY, {
+          ...bounds,
+          wasY0,
+          length: len
+        });
+        if (rawX > nextPos.x || rawY > 0 && rawY > nextPos.y) {
+          clampedAny = true;
+        }
         field.position = nextPos;
         if (group) {
           group.absolutePosition(fieldPositionToPixels(nextPos));
@@ -3914,6 +4474,25 @@
         };
       });
       fieldLayer?.batchDraw();
+      if (clampedAny) {
+        showDesignError(
+          `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`
+        );
+      } else {
+        const peers = currentFormatFields().map((f) => {
+          const moved = updates.find(
+            (u) => u.originalFieldName === f.name || isSameFieldRef(u.fieldInfo, f)
+          );
+          return moved ? moved.fieldInfo : f;
+        });
+        for (const u of updates) {
+          const overlapMsg = formatOverlapWarning(u.fieldInfo, peers);
+          if (overlapMsg) {
+            showDesignError(overlapMsg);
+            break;
+          }
+        }
+      }
       scheduleNudgeUpdate(lastSelectedFormat, updates);
     });
   }
@@ -4184,12 +4763,26 @@
 
   // webui/src/main.js
   setIndicatorChangeHandler(() => refreshCanvas());
+  var LAYOUT_STORAGE_KEY = `ibmi.dspfDesigner.layout`;
+  var MIN_SIDE_WIDTH = 180;
+  var MAX_SIDE_WIDTH = 480;
+  var MIN_BOTTOM_HEIGHT = 120;
+  var DEFAULT_LEFT_WIDTH = 240;
+  var DEFAULT_RIGHT_WIDTH = 280;
+  var DEFAULT_BOTTOM_HEIGHT = 240;
+  var fieldsDock = `side`;
+  var leftWidth = DEFAULT_LEFT_WIDTH;
+  var rightWidth = DEFAULT_RIGHT_WIDTH;
+  var bottomHeight = DEFAULT_BOTTOM_HEIGHT;
   window.addEventListener("message", (event) => {
     const command = event.data.command;
     const docType = event.data.documentType || `dds.dspf`;
     switch (command) {
       case `load`:
-        loadDDS(event.data.dds, docType, true, { restoreSelection: false });
+        loadDDS(event.data.dds, docType, true, {
+          restoreSelection: false,
+          selectFormat: event.data.selectFormat
+        });
         break;
       case `update`:
         loadDDS(event.data.dds, docType, true, { restoreSelection: true });
@@ -4209,6 +4802,12 @@
       case `requestConfirmResult`:
         resolveHostDialog(event.data.requestId, event.data.confirmed === true);
         break;
+      case `selectFormat`:
+        selectRecordFormat(event.data.recordFormat);
+        break;
+      case `flushPendingEdits`:
+        flushPendingNudge();
+        break;
     }
   });
   window.onload = () => {
@@ -4216,6 +4815,7 @@
     setupKeyboard();
     setupToolbar();
     setupSidebarToggles();
+    setupPanelLayout();
   };
   function setSidebarCollapsed(side, collapsed) {
     const sidebar = document.getElementById(side === `left` ? `leftSidebar` : `rightSidebar`);
@@ -4226,6 +4826,7 @@
     if (rail) {
       rail.hidden = !collapsed;
     }
+    syncSplitterVisibility();
   }
   function setupSidebarToggles() {
     document.getElementById(`collapseLeftSidebar`)?.addEventListener(`click`, () => {
@@ -4250,10 +4851,6 @@
         setEditorMode(next);
       });
     }
-    const sourceBtn = document.getElementById(`showSourceBtn`);
-    if (sourceBtn) {
-      sourceBtn.addEventListener(`click`, () => requestShowSource());
-    }
     const sizeSelect = document.getElementById(`screenSizeSelect`);
     if (sizeSelect) {
       sizeSelect.addEventListener(`change`, () => {
@@ -4267,6 +4864,226 @@
         }
       });
     }
+  }
+  function setupPanelLayout() {
+    loadLayoutPrefs();
+    applyLayoutSizes();
+    applyFieldsDock(fieldsDock, false);
+    document.getElementById(`dockFieldsSide`)?.addEventListener(`click`, () => {
+      applyFieldsDock(`side`, true);
+    });
+    document.getElementById(`dockFieldsBottom`)?.addEventListener(`click`, () => {
+      applyFieldsDock(`bottom`, true);
+    });
+    setupSplitterDrag(`leftSplitter`, `left`);
+    setupSplitterDrag(`rightSplitter`, `right`);
+    setupSplitterDrag(`bottomSplitter`, `bottom`);
+  }
+  function loadLayoutPrefs() {
+    try {
+      const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed.fieldsDock === `side` || parsed.fieldsDock === `bottom`) {
+        fieldsDock = parsed.fieldsDock;
+      }
+      if (Number.isFinite(parsed.leftWidth)) {
+        leftWidth = clamp(parsed.leftWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+      }
+      if (Number.isFinite(parsed.rightWidth)) {
+        rightWidth = clamp(parsed.rightWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+      }
+      if (Number.isFinite(parsed.bottomHeight)) {
+        bottomHeight = Math.max(MIN_BOTTOM_HEIGHT, parsed.bottomHeight);
+      }
+    } catch {
+    }
+  }
+  function saveLayoutPrefs() {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({
+        fieldsDock,
+        leftWidth,
+        rightWidth,
+        bottomHeight
+      }));
+    } catch {
+    }
+  }
+  function applyLayoutSizes() {
+    const layout = document.getElementById(`appLayout`);
+    if (!layout) {
+      return;
+    }
+    layout.style.setProperty(`--left-sidebar-width`, `${leftWidth}px`);
+    layout.style.setProperty(`--right-sidebar-width`, `${rightWidth}px`);
+    layout.style.setProperty(`--fields-panel-height`, `${bottomHeight}px`);
+  }
+  function applyFieldsDock(dock, persist) {
+    fieldsDock = dock;
+    const layout = document.getElementById(`appLayout`);
+    const layoutCenter = document.getElementById(`layoutCenter`);
+    const bottomSlot = document.getElementById(`fieldsBottomSlot`);
+    const bottomSplitter = document.getElementById(`bottomSplitter`);
+    const rightSplitter = document.getElementById(`rightSplitter`);
+    const rightSidebar = document.getElementById(`rightSidebar`);
+    const expandRight = document.getElementById(`expandRightSidebar`);
+    const sideBtn = document.getElementById(`dockFieldsSide`);
+    const bottomBtn = document.getElementById(`dockFieldsBottom`);
+    if (!layout || !layoutCenter || !bottomSlot || !rightSidebar || !expandRight) {
+      return;
+    }
+    layout.dataset.fieldsDock = dock;
+    if (dock === `bottom`) {
+      bottomSlot.hidden = false;
+      if (bottomSplitter) {
+        bottomSplitter.hidden = false;
+      }
+      if (rightSplitter) {
+        rightSplitter.hidden = true;
+      }
+      bottomSlot.appendChild(expandRight);
+      bottomSlot.appendChild(rightSidebar);
+    } else {
+      if (bottomSplitter) {
+        bottomSplitter.hidden = true;
+      }
+      if (rightSplitter) {
+        rightSplitter.hidden = false;
+      }
+      if (rightSplitter?.parentElement === layout) {
+        layout.insertBefore(expandRight, rightSplitter.nextSibling);
+        layout.insertBefore(rightSidebar, expandRight.nextSibling);
+      } else {
+        layout.appendChild(expandRight);
+        layout.appendChild(rightSidebar);
+      }
+      bottomSlot.hidden = true;
+    }
+    if (sideBtn) {
+      sideBtn.classList.toggle(`active`, dock === `side`);
+      sideBtn.setAttribute(`aria-pressed`, dock === `side` ? `true` : `false`);
+    }
+    if (bottomBtn) {
+      bottomBtn.classList.toggle(`active`, dock === `bottom`);
+      bottomBtn.setAttribute(`aria-pressed`, dock === `bottom` ? `true` : `false`);
+    }
+    syncSplitterVisibility();
+    applyLayoutSizes();
+    if (persist) {
+      saveLayoutPrefs();
+    }
+  }
+  function syncSplitterVisibility() {
+    const leftSidebar = document.getElementById(`leftSidebar`);
+    const rightSidebar = document.getElementById(`rightSidebar`);
+    const leftSplitter = document.getElementById(`leftSplitter`);
+    const rightSplitter = document.getElementById(`rightSplitter`);
+    const bottomSplitter = document.getElementById(`bottomSplitter`);
+    const leftCollapsed = leftSidebar?.classList.contains(`collapsed`);
+    const rightCollapsed = rightSidebar?.classList.contains(`collapsed`);
+    if (leftSplitter) {
+      leftSplitter.hidden = !!leftCollapsed;
+    }
+    if (fieldsDock === `side`) {
+      if (rightSplitter) {
+        rightSplitter.hidden = !!rightCollapsed;
+      }
+      if (bottomSplitter) {
+        bottomSplitter.hidden = true;
+      }
+    } else {
+      if (rightSplitter) {
+        rightSplitter.hidden = true;
+      }
+      if (bottomSplitter) {
+        bottomSplitter.hidden = !!rightCollapsed;
+      }
+    }
+  }
+  function setupSplitterDrag(splitterId, kind) {
+    const splitter = document.getElementById(splitterId);
+    const layout = document.getElementById(`appLayout`);
+    if (!splitter || !layout) {
+      return;
+    }
+    const startDrag = (clientX, clientY) => {
+      const startX = clientX;
+      const startY = clientY;
+      const startLeft = leftWidth;
+      const startRight = rightWidth;
+      const startBottom = bottomHeight;
+      layout.classList.add(`resizing`);
+      layout.classList.add(kind === `bottom` ? `resizing-row` : `resizing-col`);
+      splitter.classList.add(`active`);
+      const onMove = (ev) => {
+        if (kind === `left`) {
+          leftWidth = clamp(startLeft + (ev.clientX - startX), MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+        } else if (kind === `right`) {
+          rightWidth = clamp(startRight - (ev.clientX - startX), MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+        } else {
+          const layoutRect = layout.getBoundingClientRect();
+          const maxBottom = Math.max(MIN_BOTTOM_HEIGHT, Math.floor(layoutRect.height * 0.7));
+          bottomHeight = clamp(startBottom - (ev.clientY - startY), MIN_BOTTOM_HEIGHT, maxBottom);
+        }
+        applyLayoutSizes();
+      };
+      const onUp = () => {
+        window.removeEventListener(`pointermove`, onMove);
+        window.removeEventListener(`pointerup`, onUp);
+        layout.classList.remove(`resizing`, `resizing-row`, `resizing-col`);
+        splitter.classList.remove(`active`);
+        saveLayoutPrefs();
+      };
+      window.addEventListener(`pointermove`, onMove);
+      window.addEventListener(`pointerup`, onUp);
+    };
+    splitter.addEventListener(`pointerdown`, (ev) => {
+      if (ev.button !== 0) {
+        return;
+      }
+      ev.preventDefault();
+      startDrag(ev.clientX, ev.clientY);
+    });
+    splitter.addEventListener(`keydown`, (ev) => {
+      const step = ev.shiftKey ? 24 : 8;
+      let changed = false;
+      if (kind === `left`) {
+        if (ev.key === `ArrowLeft`) {
+          leftWidth = clamp(leftWidth - step, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+          changed = true;
+        } else if (ev.key === `ArrowRight`) {
+          leftWidth = clamp(leftWidth + step, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+          changed = true;
+        }
+      } else if (kind === `right`) {
+        if (ev.key === `ArrowLeft`) {
+          rightWidth = clamp(rightWidth + step, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+          changed = true;
+        } else if (ev.key === `ArrowRight`) {
+          rightWidth = clamp(rightWidth - step, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+          changed = true;
+        }
+      } else if (kind === `bottom`) {
+        if (ev.key === `ArrowUp`) {
+          bottomHeight = Math.max(MIN_BOTTOM_HEIGHT, bottomHeight + step);
+          changed = true;
+        } else if (ev.key === `ArrowDown`) {
+          bottomHeight = Math.max(MIN_BOTTOM_HEIGHT, bottomHeight - step);
+          changed = true;
+        }
+      }
+      if (changed) {
+        ev.preventDefault();
+        applyLayoutSizes();
+        saveLayoutPrefs();
+      }
+    });
+  }
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
   }
 })();
 //# sourceMappingURL=main.js.map

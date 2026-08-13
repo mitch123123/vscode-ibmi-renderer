@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <script src="{elements}" type="module"></script>
-  <script src="{konva}"></script>
-  <script src="{main}"></script>
+  <meta http-equiv="Content-Security-Policy" content="{csp}" />
+  <script src="{elements}" type="module" nonce="{nonce}"></script>
+  <script src="{konva}" nonce="{nonce}"></script>
+  <script src="{main}" nonce="{nonce}"></script>
   <link rel="stylesheet" href="{styles}">
   <link rel="stylesheet" href="{codicon}" id="vscode-codicon-stylesheet">
 </head>
@@ -13,17 +14,10 @@
   <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
     IBM i connection lost — editing is disabled until you reconnect.
   </div>
+  <div id="designErrorToast" class="design-error-toast" role="alert" aria-live="assertive" hidden></div>
   <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
   <div class="toolbar">
     <div class="toolbar-start">
-      <div class="view-switch" role="tablist" aria-label="Editor view">
-        <button type="button" class="view-switch-btn active" role="tab" aria-selected="true" disabled>
-          Design
-        </button>
-        <button type="button" id="showSourceBtn" class="view-switch-btn" role="tab" aria-selected="false">
-          Source
-        </button>
-      </div>
       <div id="recordFormatTabs" class="format-tabs" role="tablist" aria-label="Record formats"></div>
     </div>
     <div class="toolbar-actions">
@@ -38,7 +32,7 @@
     </div>
   </div>
 
-  <div class="layout">
+  <div class="layout" id="appLayout" data-fields-dock="side">
     <aside id="leftSidebar" class="sidebar left" aria-label="Format tools">
       <div class="sidebar-header">
         <span class="sidebar-header-title">Format</span>
@@ -51,11 +45,17 @@
     <button type="button" id="expandLeftSidebar" class="sidebar-rail left" title="Show format tools" aria-label="Show format tools" hidden>
       ▶
     </button>
+    <div id="leftSplitter" class="splitter vertical" role="separator" aria-orientation="vertical" aria-label="Resize format panel" tabindex="0"></div>
 
-    <div class="canvas-wrap" role="tabpanel" id="canvasTabPanel" aria-label="Design surface">
-      <div id="container" tabindex="0" role="application" aria-label="Display file design surface"></div>
+    <div class="layout-center" id="layoutCenter">
+      <div class="canvas-wrap" role="tabpanel" id="canvasTabPanel" aria-label="Design surface">
+        <div id="container" tabindex="0" role="application" aria-label="Display file design surface"></div>
+      </div>
+      <div id="bottomSplitter" class="splitter horizontal" role="separator" aria-orientation="horizontal" aria-label="Resize fields panel" tabindex="0" hidden></div>
+      <div id="fieldsBottomSlot" class="fields-bottom-slot" hidden></div>
     </div>
 
+    <div id="rightSplitter" class="splitter vertical" role="separator" aria-orientation="vertical" aria-label="Resize fields panel" tabindex="0"></div>
     <button type="button" id="expandRightSidebar" class="sidebar-rail right" title="Show field tools" aria-label="Show field tools" hidden>
       ◀
     </button>
@@ -65,6 +65,10 @@
           ▶
         </button>
         <span class="sidebar-header-title">Fields</span>
+        <div class="sidebar-header-actions" role="group" aria-label="Fields panel position">
+          <button type="button" id="dockFieldsSide" class="dock-btn active" title="Dock fields to side" aria-pressed="true">Side</button>
+          <button type="button" id="dockFieldsBottom" class="dock-btn" title="Dock fields to bottom" aria-pressed="false">Bottom</button>
+        </div>
       </div>
       <div id="keywordEditorArea" class="keyword-editor-area"></div>
       <div id="fieldInfoSidebar" class="sidebar-body"></div>

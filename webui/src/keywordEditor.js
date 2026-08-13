@@ -149,6 +149,11 @@ export function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`)
  */
 
 /**
+ * @typedef {{ maxLength?: number, filter?: (raw: string) => string, title?: string, inputMode?: string }} PropConstraints
+ * @typedef {{ label: string, id?: string, value: any, options?: Array<string|{value: string, label: string}>, constraints?: PropConstraints }} PropertyRow
+ */
+
+/**
  * @param {string} id
  * @param {PropertyRow[]} properties
  * @param {(newProps: Record<string, string>) => void} onUpdate
@@ -163,16 +168,63 @@ export function createValuesPanel(id, properties, onUpdate) {
     return cell;
   };
 
-  const createInputCell = (fieldId, value, labelText) => {
+  /**
+   * @param {string} fieldId
+   * @param {any} value
+   * @param {string} labelText
+   * @param {PropConstraints} [constraints]
+   */
+  const createInputCell = (fieldId, value, labelText, constraints) => {
     const cell = document.createElement(`vscode-table-cell`);
-    const input = document.createElement(`code`);
+    const input = document.createElement(`input`);
+    input.type = `text`;
     input.id = fieldId;
     input.className = `prop-input`;
     input.dataset.propId = fieldId;
-    input.innerText = value == null ? `` : String(value);
-    input.setAttribute(`contenteditable`, `true`);
-    input.setAttribute(`role`, `textbox`);
+    input.spellcheck = false;
+    input.autocomplete = `off`;
     input.setAttribute(`aria-label`, labelText || fieldId);
+
+    let initial = value == null ? `` : String(value);
+    if (constraints?.filter) {
+      initial = constraints.filter(initial);
+    }
+    input.value = initial;
+
+    if (constraints?.maxLength != null) {
+      input.maxLength = constraints.maxLength;
+    }
+    if (constraints?.title) {
+      input.title = constraints.title;
+      input.setAttribute(`aria-description`, constraints.title);
+    }
+    if (constraints?.inputMode) {
+      input.inputMode = constraints.inputMode;
+    }
+
+    if (constraints?.filter) {
+      const applyFilter = () => {
+        const before = input.value;
+        const next = constraints.filter(before);
+        if (next === before) {
+          return;
+        }
+        const caret = input.selectionStart;
+        input.value = next;
+        if (typeof caret === `number`) {
+          const delta = before.length - next.length;
+          const pos = Math.max(0, Math.min(next.length, caret - Math.max(0, delta)));
+          try {
+            input.setSelectionRange(pos, pos);
+          } catch {
+            // Some input types disallow selection ranges; ignore.
+          }
+        }
+      };
+      input.addEventListener(`input`, applyFilter);
+      input.addEventListener(`blur`, applyFilter);
+    }
+
     cell.appendChild(input);
     return cell;
   };
@@ -219,7 +271,7 @@ export function createValuesPanel(id, properties, onUpdate) {
     if (prop.id && prop.options) {
       row.append(createSelectCell(prop.id, prop.value, prop.options));
     } else if (prop.id) {
-      row.append(createInputCell(prop.id, prop.value, prop.label));
+      row.append(createInputCell(prop.id, prop.value, prop.label, prop.constraints));
     } else {
       row.append(createLabelCell(String(prop.value ?? ``)));
     }
@@ -242,9 +294,9 @@ export function createValuesPanel(id, properties, onUpdate) {
         if (!propId) {
           return;
         }
-        if (el instanceof HTMLSelectElement) {
+        if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) {
           newProperties[propId] = el.value;
-        } else {
+        } else if (el instanceof HTMLElement) {
           newProperties[propId] = el.innerText;
         }
       });
@@ -267,11 +319,30 @@ export function clearKeywordEditor() {
 export function ensureRightSidebarVisible() {
   const sidebar = document.getElementById(`rightSidebar`);
   const rail = document.getElementById(`expandRightSidebar`);
+  const layout = document.getElementById(`appLayout`);
+  const rightSplitter = document.getElementById(`rightSplitter`);
+  const bottomSplitter = document.getElementById(`bottomSplitter`);
   if (sidebar) {
     sidebar.classList.remove(`collapsed`);
   }
   if (rail) {
     rail.hidden = true;
+  }
+  const dock = layout?.dataset.fieldsDock || `side`;
+  if (dock === `bottom`) {
+    if (bottomSplitter) {
+      bottomSplitter.hidden = false;
+    }
+    if (rightSplitter) {
+      rightSplitter.hidden = true;
+    }
+  } else {
+    if (rightSplitter) {
+      rightSplitter.hidden = false;
+    }
+    if (bottomSplitter) {
+      bottomSplitter.hidden = true;
+    }
   }
 }
 
@@ -689,7 +760,14 @@ export function renderSections(sidebar, sections) {
     }
     if (next instanceof HTMLElement) {
       next.focus();
-      if (next.isContentEditable) {
+      if (next instanceof HTMLInputElement) {
+        const len = next.value.length;
+        try {
+          next.setSelectionRange(len, len);
+        } catch {
+          // Some input types disallow selection ranges; ignore.
+        }
+      } else if (next.isContentEditable) {
         const range = document.createRange();
         range.selectNodeContents(next);
         range.collapse(false);

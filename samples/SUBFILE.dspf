@@ -1,0 +1,19 @@
+     A* Sample subfile + WINDOW DSPF for IBM i Display File Designer
+     A                                      DSPSIZ(24 80 *DS3)
+     A          R SFL01
+     A                                      SFL
+     A            CUSTNO        7A  O  6  4
+     A            NAME         20A  O  6 13
+     A            AMOUNT        9  2O  6 35
+     A                                      EDTCDE(J)
+     A          R CTL01
+     A                                      SFLCTL(SFL01)
+     A                                      SFLPAG(5)
+     A                                      SFLSIZ(15)
+     A                                      OVERLAY
+     A                                      WINDOW(4 10 12 60)
+     A                                      WDWTITLE((*TEXT 'Customer Subfile'))
+     A                                  1  2'Customer list'
+     A                                      COLOR(WHT)
+     A                                 11  2'F3=Exit  F12=Cancel'
+     A                                      COLOR(BLU)

@@ -6,6 +6,9 @@ import { createKeywordPanel, createValuesPanel, renderSections, clearKeywordEdit
 import { renderPalette } from "./palette.js";
 import { renderIndicatorPanel } from "./indicators.js";
 import { showHostError } from "./hostDialogs.js";
+import { stripKeywordsForTypeChange } from "./fieldTypeKeywords.js";
+import { fieldPropertyConstraints } from "./propInputLimits.js";
+import { formatOverlapWarning, validateFieldScreenFit } from "./coords.js";
 import {
   isValidFieldName,
   isValidRecordName,
@@ -82,6 +85,56 @@ export function validateWindowValue(raw) {
   return undefined;
 }
 /**
+ * Shared prop-form helpers for Format sidebar panels.
+ * @param {string} text
+ * @returns {HTMLElement}
+ */
+function propLabel(text) {
+  const el = document.createElement(`div`);
+  el.className = `prop-label`;
+  el.textContent = text;
+  return el;
+}
+
+/**
+ * @param {string} label
+ * @param {HTMLElement} control
+ * @returns {HTMLElement}
+ */
+function propRow(label, control) {
+  const row = document.createElement(`div`);
+  row.className = `prop-row`;
+  row.appendChild(propLabel(label));
+  const controlWrap = document.createElement(`div`);
+  controlWrap.className = `prop-control`;
+  controlWrap.appendChild(control);
+  row.appendChild(controlWrap);
+  return row;
+}
+
+/**
+ * @param {string} text
+ * @returns {HTMLElement}
+ */
+function propHint(text) {
+  const hint = document.createElement(`div`);
+  hint.className = `palette-hint prop-hint`;
+  hint.textContent = text;
+  return hint;
+}
+
+/**
+ * @param {string} label
+ * @returns {HTMLElement}
+ */
+function propApplyButton(label) {
+  const apply = document.createElement(`vscode-button`);
+  apply.className = `prop-apply-btn`;
+  apply.innerText = label;
+  return apply;
+}
+
+/**
  * @param {RecordInfo} recordInfo
  * @param {RecordInfo|undefined} globalInfo
  * @param {RecordInfo[]} allFormats
@@ -114,13 +167,8 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
   const sflCtl = (recordInfo.keywords || []).find((k) => k.name === `SFLCTL`);
   if (sflCtl && onFormatUpdate) {
     const helpers = document.createElement(`div`);
-    helpers.className = `sfl-helpers`;
-    helpers.style.padding = `0.5em`;
-    const hint = document.createElement(`div`);
-    hint.className = `palette-hint`;
-    hint.style.padding = `0`;
-    hint.innerText = `Edit rows on the ${sflCtl.value || `SFL`} tab. Adjust page size here.`;
-    helpers.appendChild(hint);
+    helpers.className = `panel-section sfl-helpers`;
+    helpers.appendChild(propHint(`Edit rows on the ${sflCtl.value || `SFL`} tab. Adjust page size here.`));
 
     const pag = (recordInfo.keywords || []).find((k) => k.name === `SFLPAG`);
     const siz = (recordInfo.keywords || []).find((k) => k.name === `SFLSIZ`);
@@ -142,24 +190,11 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       endSelect.appendChild(opt);
     }
 
-    const lab = (t) => {
-      const el = document.createElement(`div`);
-      el.style.fontSize = `11px`;
-      el.style.marginTop = `0.4em`;
-      el.innerText = t;
-      return el;
-    };
-    helpers.appendChild(lab(`SFLPAG`));
-    helpers.appendChild(pagInput);
-    helpers.appendChild(lab(`SFLSIZ`));
-    helpers.appendChild(sizInput);
-    helpers.appendChild(lab(`SFLEND`));
-    helpers.appendChild(endSelect);
+    helpers.appendChild(propRow(`SFLPAG`, pagInput));
+    helpers.appendChild(propRow(`SFLSIZ`, sizInput));
+    helpers.appendChild(propRow(`SFLEND`, endSelect));
 
-    const apply = document.createElement(`vscode-button`);
-    apply.innerText = `Apply subfile sizes`;
-    apply.style.marginTop = `0.5em`;
-    apply.style.display = `block`;
+    const apply = propApplyButton(`Apply subfile sizes`);
     apply.onclick = () => {
       /** @type {any} */
       const pEl = pagInput;
@@ -214,12 +249,8 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
   const winKw = (recordInfo.keywords || []).find((k) => k.name === `WINDOW`);
   if (winKw && onFormatUpdate) {
     const helpers = document.createElement(`div`);
-    helpers.style.padding = `0.5em`;
-    const hint = document.createElement(`div`);
-    hint.className = `palette-hint`;
-    hint.style.padding = `0`;
-    hint.innerText = `Drag the blue handle on the canvas to resize, or edit WINDOW / title / border here.`;
-    helpers.appendChild(hint);
+    helpers.className = `panel-section`;
+    helpers.appendChild(propHint(`Drag the blue handle on the canvas to resize, or edit WINDOW / title / border here.`));
 
     const winInput = document.createElement(`vscode-textfield`);
     winInput.setAttribute(`value`, winKw.value || `5 10 12 40`);
@@ -239,24 +270,11 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       }
       borderColor.appendChild(o);
     }
-    const lab = (t) => {
-      const el = document.createElement(`div`);
-      el.style.fontSize = `11px`;
-      el.style.marginTop = `0.4em`;
-      el.innerText = t;
-      return el;
-    };
-    helpers.appendChild(lab(`WINDOW (row col height width)`));
-    helpers.appendChild(winInput);
-    helpers.appendChild(lab(`WDWTITLE`));
-    helpers.appendChild(titleInput);
-    helpers.appendChild(lab(`WDWBORDER *COLOR`));
-    helpers.appendChild(borderColor);
+    helpers.appendChild(propRow(`WINDOW (row col height width)`, winInput));
+    helpers.appendChild(propRow(`WDWTITLE`, titleInput));
+    helpers.appendChild(propRow(`WDWBORDER *COLOR`, borderColor));
 
-    const apply = document.createElement(`vscode-button`);
-    apply.innerText = `Apply window`;
-    apply.style.marginTop = `0.5em`;
-    apply.style.display = `block`;
+    const apply = propApplyButton(`Apply window`);
     apply.onclick = () => {
       /** @type {any} */
       const wEl = winInput;
@@ -297,9 +315,10 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
   fieldList.className = `field-list`;
   const fields = (recordInfo.fields || []).filter((f) => f.displayType !== `hidden`);
   if (fields.length === 0) {
-    fieldList.innerText = `No fields yet`;
-    fieldList.style.padding = `0.5em`;
-    fieldList.style.opacity = `0.7`;
+    const empty = document.createElement(`div`);
+    empty.className = `panel-empty`;
+    empty.textContent = `No fields yet`;
+    fieldList.appendChild(empty);
   } else {
     for (const f of fields) {
       const row = document.createElement(`button`);
@@ -320,17 +339,16 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
 
   // Overlay multi-select
   const overlayDiv = document.createElement(`div`);
-  overlayDiv.style.padding = `0.5em`;
+  overlayDiv.className = `panel-section overlay-list`;
   const formats = allFormats.filter(f => f.name !== `_GLOBAL` && f.name !== recordInfo.name);
   if (formats.length > 0) {
     const label = document.createElement(`div`);
-    label.innerText = `Overlay formats:`;
-    label.style.marginBottom = `0.4em`;
+    label.className = `prop-label`;
+    label.textContent = `Overlay formats`;
     overlayDiv.appendChild(label);
     for (const f of formats) {
       const row = document.createElement(`label`);
-      row.style.display = `block`;
-      row.style.fontSize = `12px`;
+      row.className = `overlay-list-item`;
       const cb = document.createElement(`input`);
       cb.type = `checkbox`;
       cb.checked = overlayFormats.includes(f.name);
@@ -345,7 +363,10 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       overlayDiv.appendChild(row);
     }
   } else {
-    overlayDiv.innerText = `No other formats to overlay`;
+    const empty = document.createElement(`div`);
+    empty.className = `panel-empty`;
+    empty.textContent = `No other formats to overlay`;
+    overlayDiv.appendChild(empty);
   }
 
   sections.push({
@@ -356,6 +377,7 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
 
   const indicatorHost = document.createElement(`div`);
   indicatorHost.id = `indicatorPanelHost`;
+  indicatorHost.className = `panel-section`;
   sections.push({
     title: `Runtime Indicators`,
     html: indicatorHost,
@@ -415,6 +437,7 @@ const NUMERIC_DDS_TYPES = new Set([`S`, `P`, `Y`, `F`, `I`, `U`, `B`]);
  */
 function normalizeFieldProps(fieldInfo, newProps) {
   const prevDisplay = fieldInfo.displayType;
+  const prevType = (fieldInfo.type || ``).toUpperCase();
 
   let length = fieldInfo.length;
   if (newProps.length !== undefined) {
@@ -506,6 +529,8 @@ function normalizeFieldProps(fieldInfo, newProps) {
     next.primitiveType = `char`;
   }
 
+  stripKeywordsForTypeChange(next, prevType, typeUpper);
+
   /** Parse SDA-style indicator slots: "05", "N20", blank */
   const parseCond = (raw) => {
     const s = String(raw || ``).trim().toUpperCase();
@@ -533,13 +558,15 @@ function normalizeFieldProps(fieldInfo, newProps) {
  * @param {FieldInfo} fieldInfo
  * @param {(field: FieldInfo) => void} onUpdate
  * @param {() => void} onDelete
+ * @param {{ generalTools?: HTMLElement, bounds?: { maxX: number, maxY: number }, peerFields?: FieldInfo[] }} [opts]
  */
-export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
+export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts = {}) {
   const sidebar = document.getElementById(`fieldInfoSidebar`);
+  const limits = fieldPropertyConstraints();
 
-  /** @type {{label: string, id?: string, value: any, options?: Array<string|{value: string, label: string}>}[]} */
+  /** @type {{label: string, id?: string, value: any, options?: Array<string|{value: string, label: string}>, constraints?: object}[]} */
   const properties = [
-    { label: `Name`, value: fieldInfo.name || ``, id: `name` },
+    { label: `Name`, value: fieldInfo.name || ``, id: `name`, constraints: limits.name },
     {
       label: `Display Type`,
       value: fieldInfo.displayType || `output`,
@@ -552,9 +579,9 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
       id: `type`,
       options: DDS_TYPE_OPTIONS,
     },
-    { label: `Length`, value: fieldInfo.length ?? ``, id: `length` },
-    { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals` },
-    { label: `Value`, value: fieldInfo.value ?? ``, id: `value` },
+    { label: `Length`, value: fieldInfo.length ?? ``, id: `length`, constraints: limits.length },
+    { label: `Decimals`, value: fieldInfo.decimals ?? 0, id: `decimals`, constraints: limits.decimals },
+    { label: `Value`, value: fieldInfo.value ?? ``, id: `value`, constraints: limits.value },
     { label: `Position`, value: `${fieldInfo.position.x}, ${fieldInfo.position.y}` },
     {
       label: `Ind 1`,
@@ -562,6 +589,7 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
         ? `${fieldInfo.conditions[0].negate ? `N` : ``}${fieldInfo.conditions[0].indicator}`
         : ``,
       id: `cond1`,
+      constraints: limits.cond1,
     },
     {
       label: `Ind 2`,
@@ -569,6 +597,7 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
         ? `${fieldInfo.conditions[1].negate ? `N` : ``}${fieldInfo.conditions[1].indicator}`
         : ``,
       id: `cond2`,
+      constraints: limits.cond2,
     },
     {
       label: `Ind 3`,
@@ -576,6 +605,7 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
         ? `${fieldInfo.conditions[2].negate ? `N` : ``}${fieldInfo.conditions[2].indicator}`
         : ``,
       id: `cond3`,
+      constraints: limits.cond3,
     },
   ];
 
@@ -584,8 +614,20 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
       label: `Reference`,
       value: fieldInfo.reference || ``,
       id: `reference`,
+      constraints: limits.reference,
     });
   }
+
+  const keywordsHost = document.createElement(`div`);
+  keywordsHost.className = `keywords-section`;
+  if (opts.generalTools) {
+    keywordsHost.appendChild(opts.generalTools);
+  }
+  keywordsHost.appendChild(
+    createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
+      onUpdate({ ...fieldInfo, keywords });
+    }, `field`)
+  );
 
   /** @type {{title: string, html: string|Element, open?: boolean}[]} */
   const sections = [
@@ -598,25 +640,38 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete) {
           showHostError(result.error);
           return;
         }
+        if (opts.bounds) {
+          const fitError = validateFieldScreenFit(result.field, opts.bounds);
+          if (fitError) {
+            showHostError(fitError);
+            return;
+          }
+        }
         onUpdate(result.field);
       }),
     },
     {
       title: `Keywords`,
-      open: (fieldInfo.keywords || []).length > 0,
-      html: createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
-        onUpdate({ ...fieldInfo, keywords });
-      }, `field`),
+      open: true,
+      html: keywordsHost,
     },
   ];
 
   renderSections(sidebar, sections);
 
+  const overlapMsg = formatOverlapWarning(fieldInfo, opts.peerFields);
+  if (overlapMsg) {
+    const warn = document.createElement(`div`);
+    warn.className = `panel-overlap-warning`;
+    warn.setAttribute(`role`, `alert`);
+    warn.textContent = overlapMsg;
+    sidebar.insertBefore(warn, sidebar.firstChild);
+  }
+
   const deleteButton = document.createElement(`vscode-button`);
   deleteButton.setAttribute(`secondary`, `true`);
+  deleteButton.className = `panel-delete-btn`;
   deleteButton.innerText = `Delete`;
-  deleteButton.style.margin = `1em`;
-  deleteButton.style.display = `block`;
   deleteButton.addEventListener(`click`, onDelete);
   sidebar.appendChild(deleteButton);
 }

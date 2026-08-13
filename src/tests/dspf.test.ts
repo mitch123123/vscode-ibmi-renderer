@@ -129,6 +129,50 @@ describe('DisplayFile tests', () => {
     expect(lines[2]).toBe(`     A                                      DSPATR(PR)`);
   });
 
+  it(`wraps long constant text with column-80 continuation`, () => {
+    const field = new FieldInfo(0);
+    field.displayType = `const`;
+    // 34 chars of body + quotes = 36 → fits one keyword area; longer needs wrap.
+    field.value = `Bulk Customer................................Extra`;
+    field.position.x = 10;
+    field.position.y = 4;
+
+    const lines = DisplayFile.getLinesForField(field);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+    expect(lines[0].endsWith(`-`)).toBe(true);
+    expect(lines[0].length).toBe(80);
+    expect(lines[lines.length - 1].endsWith(`'`)).toBe(true);
+
+    // Round-trip: parser rejoins `-` continuations into one const value.
+    const dds = new DisplayFile();
+    dds.parse([
+      `     A          R FORM1`,
+      ...lines,
+    ]);
+    const fmt = dds.formats.find((f) => f.name === `FORM1`);
+    const consts = fmt?.fields.filter((f) => f.displayType === `const`) ?? [];
+    expect(consts.length).toBe(1);
+    expect(consts[0].value).toBe(field.value);
+  });
+
+  it(`wraps long keywords instead of truncating`, () => {
+    const lines = DisplayFile.getLinesForKeyword({
+      name: `TEXT`,
+      value: `This is a deliberately long keyword value that must wrap`,
+      conditions: [],
+    });
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+    expect(lines[0].endsWith(`-`)).toBe(true);
+    expect(lines[0]).toContain(`TEXT(`);
+    expect(lines.join(``)).toContain(`must wrap`);
+  });
+
   it('No duplicate RecordInfo', () => {
     let dds = new DisplayFile();
     dds.parse(dspf1);
@@ -700,5 +744,73 @@ describe('DisplayFile tests', () => {
     expect(next.some(l => l.includes(`SPECHELP`))).toBe(true);
     expect(next.some(l => l.includes(`COLOR(BLU)`))).toBe(true);
     expect(next.some(l => l.includes(`FLD1`))).toBe(true);
+  });
+
+  it('does not inject DATE/TIME keywords when parsing types L/T', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            DATE1          8L  O  1  1`,
+      `     A                                      DATFMT(*ISO)`,
+      `     A            TIME1          8T  O  2  1`,
+      `     A                                      TIMFMT(*HMS)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const form = dds.formats.find(f => f.name === `FORM1`)!;
+    const date1 = form.fields.find(f => f.name === `DATE1`)!;
+    const time1 = form.fields.find(f => f.name === `TIME1`)!;
+
+    expect(date1.type).toBe(`L`);
+    expect(date1.keywords.map(k => k.name)).toEqual([`DATFMT`]);
+    expect(time1.type).toBe(`T`);
+    expect(time1.keywords.map(k => k.name)).toEqual([`TIMFMT`]);
+  });
+
+  it('does not emit DATE/TIME stubs on typed L/T fields', () => {
+    const dateField = FieldInfo.fromData({
+      name: `DATE1`,
+      type: `L`,
+      length: 8,
+      displayType: `output`,
+      position: { x: 1, y: 1 },
+      keywords: [
+        { name: `DATE`, conditions: [] },
+        { name: `DATFMT`, value: `*ISO`, conditions: [] },
+      ],
+    });
+    const timeField = FieldInfo.fromData({
+      name: `TIME1`,
+      type: `T`,
+      length: 8,
+      displayType: `output`,
+      position: { x: 1, y: 2 },
+      keywords: [
+        { name: `TIME`, conditions: [] },
+        { name: `TIMFMT`, value: `*HMS`, conditions: [] },
+      ],
+    });
+
+    const dateLines = DisplayFile.getLinesForField(dateField);
+    expect(dateLines.some(l => /\bDATE\b/.test(l) && !l.includes(`DATFMT`))).toBe(false);
+    expect(dateLines.some(l => l.includes(`DATFMT(*ISO)`))).toBe(true);
+
+    const timeLines = DisplayFile.getLinesForField(timeField);
+    expect(timeLines.some(l => /\bTIME\b/.test(l) && !l.includes(`TIMFMT`))).toBe(false);
+    expect(timeLines.some(l => l.includes(`TIMFMT(*HMS)`))).toBe(true);
+  });
+
+  it('still emits DATE/TIME keywords on constants', () => {
+    const field = FieldInfo.fromData({
+      displayType: `const`,
+      value: ``,
+      position: { x: 1, y: 1 },
+      keywords: [
+        { name: `TIME`, conditions: [] },
+        { name: `TIMFMT`, value: `*HMS`, conditions: [] },
+      ],
+    });
+    const lines = DisplayFile.getLinesForField(field);
+    expect(lines.some(l => l.trimEnd().endsWith(`TIME`))).toBe(true);
+    expect(lines.some(l => l.includes(`TIMFMT(*HMS)`))).toBe(true);
   });
 });

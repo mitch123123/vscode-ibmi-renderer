@@ -1,20 +1,23 @@
 import * as vscode from "vscode";
 import { VIEW_TYPE } from "./shared/messages";
+import type { SourceRevealLines } from "./shared/messages";
 
 export type EditorViewMode = "designer" | "source";
 
-/** URIs currently being switched by openDdsView — skip auto-enforce for these. */
-const switchingUris = new Set<string>();
+export interface OpenDdsViewOptions {
+  /** When opening source, select and reveal these inclusive 0-based lines. */
+  revealLines?: SourceRevealLines;
+}
 
 function sameUri(a: vscode.Uri, b: vscode.Uri): boolean {
   return a.toString() === b.toString();
 }
 
-function isDesignerTab(tab: vscode.Tab): boolean {
+export function isDesignerTab(tab: vscode.Tab): boolean {
   return tab.input instanceof vscode.TabInputCustom && tab.input.viewType === VIEW_TYPE;
 }
 
-function isTextTab(tab: vscode.Tab): boolean {
+export function isTextTab(tab: vscode.Tab): boolean {
   return tab.input instanceof vscode.TabInputText;
 }
 
@@ -37,77 +40,78 @@ function tabsForUri(uri: vscode.Uri): { tab: vscode.Tab; group: vscode.TabGroup 
 
 /**
  * Open the DDS file as designer or default text editor.
- * Ensures only one editor kind is open for that URI at a time.
- * Returns false if the user cancelled a dirty-tab save prompt (toggle aborted).
+ * Does not close the other kind — designer and text may stay open side by side
+ * and stay in sync through the shared TextDocument.
  */
-export async function openDdsView(uri: vscode.Uri, mode: EditorViewMode): Promise<boolean> {
-  const key = uri.toString();
+export async function openDdsView(
+  uri: vscode.Uri,
+  mode: EditorViewMode,
+  options?: OpenDdsViewOptions
+): Promise<boolean> {
   const existing = tabsForUri(uri);
-  const column =
-    existing[0]?.group.viewColumn ??
-    vscode.window.tabGroups.activeTabGroup.viewColumn ??
-    vscode.ViewColumn.Active;
+  const sameKind = existing.filter(({ tab }) =>
+    mode === `designer` ? isDesignerTab(tab) : isTextTab(tab)
+  );
+  const opposite = existing.filter(({ tab }) =>
+    mode === `designer` ? isTextTab(tab) : isDesignerTab(tab)
+  );
 
-  switchingUris.add(key);
-  try {
-    // Close the opposite view first. If the tab is dirty and the user hits Cancel
-    // on the save dialog, close() returns false — abort without opening the other view.
-    const closed = await closeOppositeDdsTabs(uri, mode);
-    if (!closed) {
-      return false;
-    }
-
-    await vscode.commands.executeCommand(
-      `vscode.openWith`,
-      uri,
-      mode === `designer` ? VIEW_TYPE : `default`,
-      { viewColumn: column, preview: false }
-    );
-
-    // Clean up any leftover opposite tabs (should already be gone)
-    const closedAgain = await closeOppositeDdsTabs(uri, mode);
-    if (!closedAgain) {
-      // Rare: opposite reappeared dirty / cancel on second close — revert new view
-      await closeTabsOfKind(uri, mode);
-      return false;
-    }
-
-    const sameKind = tabsForUri(uri)
-      .filter(({ tab }) => (mode === `designer` ? isDesignerTab(tab) : isTextTab(tab)))
-      .map(({ tab }) => tab);
-    if (sameKind.length > 1) {
-      await vscode.window.tabGroups.close(sameKind.slice(1));
-    }
-
-    return true;
-  } finally {
-    switchingUris.delete(key);
+  let column: vscode.ViewColumn;
+  if (sameKind.length > 0) {
+    column = sameKind[0].group.viewColumn ?? vscode.ViewColumn.Active;
+  } else if (opposite.length > 0) {
+    column = vscode.ViewColumn.Beside;
+  } else {
+    column =
+      existing[0]?.group.viewColumn ??
+      vscode.window.tabGroups.activeTabGroup.viewColumn ??
+      vscode.ViewColumn.Active;
   }
-}
 
-export function isSwitchingDdsView(uri: vscode.Uri): boolean {
-  return switchingUris.has(uri.toString());
-}
+  await vscode.commands.executeCommand(
+    `vscode.openWith`,
+    uri,
+    mode === `designer` ? VIEW_TYPE : `default`,
+    { viewColumn: column, preview: false }
+  );
 
-/**
- * Close text tabs when opening designer, or designer tabs when opening source.
- * @returns false if the user cancelled closing a dirty tab
- */
-export async function closeOppositeDdsTabs(uri: vscode.Uri, mode: EditorViewMode): Promise<boolean> {
-  const opposite = tabsForUri(uri)
-    .filter(({ tab }) => (mode === `designer` ? isTextTab(tab) : isDesignerTab(tab)))
-    .map(({ tab }) => tab);
-  if (opposite.length === 0) {
-    return true;
-  }
-  return vscode.window.tabGroups.close(opposite);
-}
-
-async function closeTabsOfKind(uri: vscode.Uri, mode: EditorViewMode): Promise<void> {
-  const tabs = tabsForUri(uri)
+  const after = tabsForUri(uri)
     .filter(({ tab }) => (mode === `designer` ? isDesignerTab(tab) : isTextTab(tab)))
     .map(({ tab }) => tab);
-  if (tabs.length > 0) {
-    await vscode.window.tabGroups.close(tabs);
+  if (after.length > 1) {
+    await vscode.window.tabGroups.close(after.slice(1));
   }
+
+  if (mode === `source` && options?.revealLines) {
+    await revealSourceLines(uri, options.revealLines);
+  }
+
+  return true;
+}
+
+export async function revealSourceLines(uri: vscode.Uri, lines: SourceRevealLines): Promise<void> {
+  if (!Number.isInteger(lines.startLine) || !Number.isInteger(lines.endLine)) {
+    return;
+  }
+  if (lines.startLine < 0 || lines.endLine < lines.startLine) {
+    return;
+  }
+
+  const document = await vscode.workspace.openTextDocument(uri);
+  if (document.lineCount === 0) {
+    return;
+  }
+
+  const startLine = Math.min(lines.startLine, document.lineCount - 1);
+  const endLine = Math.min(Math.max(lines.endLine, startLine), document.lineCount - 1);
+  const range = new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length);
+
+  const existingText = tabsForUri(uri).find(({ tab }) => isTextTab(tab));
+  const editor = await vscode.window.showTextDocument(document, {
+    preview: false,
+    preserveFocus: false,
+    viewColumn: existingText?.group.viewColumn,
+  });
+  editor.selection = new vscode.Selection(range.start, range.end);
+  editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 }

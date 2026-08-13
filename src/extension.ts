@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
-import { closeOppositeDdsTabs, isSwitchingDdsView, openDdsView } from './editorSwitch';
+import { openDdsView } from './editorSwitch';
 import { registerEditPreviewCodeLens } from './editPreviewCodeLens';
 import { registerIbmiConnectionLifecycle } from './ibmiLifecycle';
 import { isProtectedDdsSource, protectedSourceMessage } from './protectedSource';
-import { VIEW_TYPE } from './shared/messages';
 import { DspfDesignerProvider } from './ui';
 import { asBrowserNode, resolveDesignerUri, uriLooksLikeDesignerSource } from './uri';
 
@@ -18,42 +17,20 @@ function activeDesignerUri(): vscode.Uri | undefined {
 	return undefined;
 }
 
-async function enforceExclusiveDdsTabs(opened: readonly vscode.Tab[]): Promise<void> {
-	for (const tab of opened) {
-		if (tab.input instanceof vscode.TabInputCustom && tab.input.viewType === VIEW_TYPE) {
-			if (isSwitchingDdsView(tab.input.uri)) {
-				continue;
-			}
-			if (await isProtectedDdsSource(tab.input.uri)) {
-				await vscode.window.tabGroups.close(tab);
-				void vscode.window.showWarningMessage(protectedSourceMessage(tab.input.uri));
-				continue;
-			}
-			const closed = await closeOppositeDdsTabs(tab.input.uri, 'designer');
-			if (!closed) {
-				// User cancelled closing dirty source — revert designer open
-				await vscode.window.tabGroups.close(tab);
-			}
-		} else if (tab.input instanceof vscode.TabInputText && uriLooksLikeDesignerSource(tab.input.uri)) {
-			if (isSwitchingDdsView(tab.input.uri)) {
-				continue;
-			}
-			const closed = await closeOppositeDdsTabs(tab.input.uri, 'source');
-			if (!closed) {
-				// User cancelled closing dirty designer — revert source open
-				await vscode.window.tabGroups.close(tab);
-			}
-		}
-	}
-}
-
 async function openDesignerIfAllowed(
 	uri: vscode.Uri,
-	browserNode?: ReturnType<typeof asBrowserNode>
+	browserNode?: ReturnType<typeof asBrowserNode>,
+	selectFormat?: string
 ): Promise<void> {
 	if (await isProtectedDdsSource(uri, browserNode)) {
 		vscode.window.showWarningMessage(protectedSourceMessage(uri));
 		return;
+	}
+	if (selectFormat) {
+		if (DspfDesignerProvider.requestSelectFormat(uri, selectFormat)) {
+			return;
+		}
+		DspfDesignerProvider.setPendingSelectFormat(uri, selectFormat);
 	}
 	await openDdsView(uri, 'designer');
 }
@@ -84,6 +61,31 @@ export function activate(context: vscode.ExtensionContext) {
 			await openDesignerIfAllowed(target, browserNode);
 		}),
 
+		vscode.commands.registerCommand(
+			'vscode-ibmi-renderer.editRecordFormat',
+			async (uri?: vscode.Uri, formatName?: string) => {
+				const target = (uri instanceof vscode.Uri ? uri : undefined) ?? resolveDesignerUri();
+				const name = typeof formatName === `string` ? formatName.trim() : ``;
+				if (!target) {
+					vscode.window.showWarningMessage(
+						'Open a display file (.dspf) or printer file (.prtf) to edit a record format.'
+					);
+					return;
+				}
+				if (!name) {
+					vscode.window.showWarningMessage('No record format specified.');
+					return;
+				}
+				if (!uriLooksLikeDesignerSource(target)) {
+					vscode.window.showWarningMessage(
+						`"${target.path.split('/').pop()}" does not look like a DSPF or PRTF source.`
+					);
+					return;
+				}
+				await openDesignerIfAllowed(target, undefined, name);
+			}
+		),
+
 		vscode.commands.registerCommand('vscode-ibmi-renderer.showSource', async (uri?: vscode.Uri) => {
 			const target =
 				(uri instanceof vscode.Uri ? uri : undefined) ?? activeDesignerUri() ?? resolveDesignerUri();
@@ -108,10 +110,6 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			await openDesignerIfAllowed(target);
 		}),
-
-		vscode.window.tabGroups.onDidChangeTabs((e) => {
-			void enforceExclusiveDdsTabs(e.opened);
-		})
 	);
 
 	warnIfLegacyRendererPresent(context);

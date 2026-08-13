@@ -156,7 +156,8 @@ export function clearDraggingField() {
   draggingField = undefined;
 }
 
-export { isValidRecordName } from "../../src/shared/recordName.ts";
+import { isValidRecordName } from "../../src/shared/recordName.ts";
+export { isValidRecordName };
 
 /**
  * @param {string} prefix

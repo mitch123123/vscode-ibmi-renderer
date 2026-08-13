@@ -3,7 +3,10 @@
  * the webview (imported from both `src/` and `webui/src/`).
  *
  * 1–10 characters: first A–Z / @ / # / $, then A–Z / 0–9 / @ / # / $.
+ * No embedded blanks (DDS name column is positions 19–28).
  */
+export const FIELD_NAME_MAX = 10;
+
 export const RECORD_NAME_RE = /^[A-Z@#$][A-Z0-9@#$]{0,9}$/;
 
 export function isValidRecordName(name: string): boolean {
@@ -14,7 +17,7 @@ export function isValidRecordName(name: string): boolean {
 export const isValidFieldName = isValidRecordName;
 
 export const RECORD_NAME_HINT =
-  `Use 1–10 characters: A–Z, 0–9, @, #, $ (must start with a letter or @/#/$).`;
+  `Use 1–${FIELD_NAME_MAX} characters: A–Z, 0–9, @, #, $ (must start with a letter or @/#/$); no spaces.`;
 
 export const FIELD_NAME_HINT = RECORD_NAME_HINT;
 

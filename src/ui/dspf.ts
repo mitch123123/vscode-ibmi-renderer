@@ -187,23 +187,13 @@ export class DisplayFile {
                     this.currentField.primitiveType = `decimal`;
                     if (dec !== "") { this.currentField.decimals = Number(dec); }
                     break;
-                  case `L`: //Date
+                  case `L`: // Date data type (not the DATE keyword)
                     this.currentField.length = 8;
                     this.currentField.primitiveType = `char`;
-                    this.currentField.keywords.push({
-                      name: `DATE`,
-                      value: undefined,
-                      conditions: []
-                    });
                     break;
-                  case `T`: //Time
+                  case `T`: // Time data type (not the TIME keyword)
                     this.currentField.length = 8;
                     this.currentField.primitiveType = `char`;
-                    this.currentField.keywords.push({
-                      name: `TIME`,
-                      value: undefined,
-                      conditions: []
-                    });
                     break;
                   default:
                     this.currentField.primitiveType = `char`;
@@ -458,17 +448,56 @@ export class DisplayFile {
     }, [] as Conditional[][]);
   }
 
+  /**
+   * Pack text into the DDS keyword/function area (cols 45–80 = 36 chars).
+   * When longer than 36, emit continuation lines with `-` in column 80.
+   * Continuation lines use a blank indicator/body prefix (cols 1–44).
+   *
+   * @param prefix44 Exactly 44 characters covering cols 1–44 of the first line.
+   * @param text Content for cols 45+ (const literal, KEYWORD, or KEYWORD(value)).
+   */
+  public static wrapKeywordArea(prefix44: string, text: string): string[] {
+    const KEYWORD_WIDTH = 36;
+    const CONT_WIDTH = KEYWORD_WIDTH - 1; // leave col 80 for `-`
+    const CONT_PREFIX = `     A                                      `; // 44 chars
+
+    const prefix = prefix44.length === 44
+      ? prefix44
+      : DisplayFile.fitColumn(prefix44, 44, `left`);
+    const payload = text ?? ``;
+
+    if (payload.length <= KEYWORD_WIDTH) {
+      return [`${prefix}${payload}`];
+    }
+
+    const lines: string[] = [];
+    let remaining = payload;
+    let first = true;
+    while (remaining.length > 0) {
+      const isLast = remaining.length <= KEYWORD_WIDTH;
+      const take = isLast ? remaining.length : Math.min(CONT_WIDTH, remaining.length);
+      const chunk = remaining.slice(0, take);
+      remaining = remaining.slice(take);
+      const linePrefix = first ? prefix : CONT_PREFIX;
+      first = false;
+      lines.push(remaining.length > 0 ? `${linePrefix}${chunk}-` : `${linePrefix}${chunk}`);
+    }
+    return lines;
+  }
+
   public static getLinesForKeyword(keyword: Keyword): string[] {
     const lines: string[] = [];
     const condition = this.conditionalGroups(keyword.conditions);
     const firstConditions = condition[0] || [];
     const conditionStrings = DisplayFile.formatConditionString(firstConditions);
-    // Cols 45-80 = 36 chars for the keyword/function area. Truncate only —
-    // do not right-pad, so short keywords stay identical to historical output.
+    // Cols 45-80 = 36 chars for the keyword/function area; wrap with `-` continuations.
     const rawKeyword = `${keyword.name}${keyword.value ? `(${keyword.value})` : ``}`;
-    const keywordText = rawKeyword.length > 36 ? rawKeyword.slice(0, 36) : rawKeyword;
-
-    lines.push(`     A ${conditionStrings}                            ${keywordText}`);
+    lines.push(
+      ...DisplayFile.wrapKeywordArea(
+        `     A ${conditionStrings}                            `,
+        rawKeyword,
+      ),
+    );
 
     for (let g = 1; g < condition.length; g++) {
       const group = condition[g];
@@ -510,9 +539,12 @@ export class DisplayFile {
     const nameCol = DisplayFile.fitColumn(field.name || ``, 10, `left`);
 
     if (field.displayType === `const`) {
-      const value = field.value;
+      const value = field.value ?? ``;
       newLines.push(
-        `     A ${conditionStrings}                      ${y}${x}'${value}'`,
+        ...DisplayFile.wrapKeywordArea(
+          `     A ${conditionStrings}                      ${y}${x}`,
+          `'${value}'`,
+        ),
       );
     } else if (field.isReference && field.name) {
       const length = field.length !== undefined && field.length !== null && field.length !== 0
@@ -543,7 +575,18 @@ export class DisplayFile {
       newLines.push(`     A ${DisplayFile.formatConditionString(condition[g])}`);
     }
 
+    // DATE/TIME keywords display system date/time on constants. DDS types L/T
+    // already encode date/time; never re-emit stub DATE/TIME keywords that were
+    // historically injected into the in-memory model for preview.
+    const typeUpper = (field.type || ``).toUpperCase();
     for (const keyword of field.keywords) {
+      const kwName = (keyword.name || ``).toUpperCase();
+      if (typeUpper === `L` && kwName === `DATE`) {
+        continue;
+      }
+      if (typeUpper === `T` && kwName === `TIME`) {
+        continue;
+      }
       newLines.push(...DisplayFile.getLinesForKeyword(keyword));
     }
 

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release:
-    name: Package and release VSIX
+    name: Package and publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,3 +28,21 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "VSCE_PAT not configured; skipping VS Marketplace publish."
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --packagePath vscode-ibmi-renderer.vsix
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "OVSX_PAT not configured; skipping Open VSX publish."
+            exit 0
+          fi
+          npx --yes ovsx publish vscode-ibmi-renderer.vsix -p "$OVSX_PAT"

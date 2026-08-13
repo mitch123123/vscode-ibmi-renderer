@@ -1,8 +1,20 @@
 import type { FieldInfoData, Keyword } from "./dspf-types";
 
+/** Inclusive 0-based line span to select in the text editor after opening source. */
+export interface SourceRevealLines {
+  startLine: number;
+  endLine: number;
+}
+
 /** Messages from extension host → webview */
 export type HostToWebviewMessage =
-  | { command: "load"; dds: unknown; documentType: "dds.dspf" | "dds.prtf" }
+  | {
+      command: "load";
+      dds: unknown;
+      documentType: "dds.dspf" | "dds.prtf";
+      /** Select this record-format tab after load (e.g. CodeLens Edit). */
+      selectFormat?: string;
+    }
   | { command: "update"; dds: unknown; documentType: "dds.dspf" | "dds.prtf" }
   | { command: "connectionStatus"; connected: boolean }
   | {
@@ -22,11 +34,14 @@ export type HostToWebviewMessage =
   | { command: "editFailed"; reason: string }
   | { command: "showError"; message: string }
   | { command: "requestInputResult"; requestId: string; value?: string }
-  | { command: "requestConfirmResult"; requestId: string; confirmed: boolean };
+  | { command: "requestConfirmResult"; requestId: string; confirmed: boolean }
+  /** Switch to Design mode and activate the named record-format tab. */
+  | { command: "selectFormat"; recordFormat: string }
+  /** Ask the webview to immediately send any debounced nudge edits. */
+  | { command: "flushPendingEdits" };
 
 /** Messages from webview → extension host */
 export type WebviewToHostMessage =
-  | { command: "showSource" }
   | { command: "deleteField"; recordFormat: string; fieldName: string }
   | { command: "deleteFields"; recordFormat: string; fieldNames: string[] }
   | { command: "newField"; recordFormat: string; fieldInfo: FieldInfoData }
@@ -41,7 +56,6 @@ export type WebviewToHostMessage =
   | {
       command: "newFormats";
       formats: Array<{ name: string; keywords?: Keyword[] }>;
-      /** Format to select after insert (webview also tracks this locally). */
       selectFormat?: string;
     }
   | { command: "deleteFormat"; recordFormat: string }
@@ -64,7 +78,6 @@ export type WebviewToHostMessage =
       title: string;
       value?: string;
       prompt?: string;
-      /** When `"recordName"`, host validates with the shared IBM i name grammar. */
       validate?: "recordName";
     }
   | {
@@ -76,6 +89,12 @@ export type WebviewToHostMessage =
   | {
       command: "showError";
       message: string;
+    }
+  /** Open/focus the DDS text editor and select these inclusive 0-based lines. */
+  | {
+      command: "revealInSource";
+      startLine: number;
+      endLine: number;
     };
 
 export const VIEW_TYPE = "ibmi.dspfDesigner";

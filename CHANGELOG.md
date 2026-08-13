@@ -6,6 +6,38 @@ documented here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- Designer tabs show `[Designer]` in the title and a distinct layout icon so
+  they can be told apart from the DDS source editor (VS Code 1.106+).
+- Sidebar field Properties: live GUI limits while editing (Name max 10 / no
+  spaces, Length/Decimals digit caps, indicator `Nxx` shape, const Value /
+  Reference character limits) aligned with IBM i DDS hard limits.
+- Webview Content Security Policy with script nonces; `enableCommandUris`
+  disabled; `localResourceRoots` limited to `webui/`.
+- Workspace trust: designer requires a trusted workspace
+  (`untrustedWorkspaces.supported: false`).
+- Host validation for `placeDatabaseFields`, keyword/const emission safety,
+  and sanitized webview dialog strings.
+- Contributor docs: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
+  issue/PR templates; richer `samples/SUBFILE.dspf`.
+- Marketplace packaging: extension icon + gallery banner; release workflow
+  publishes to VS Code Marketplace and Open VSX (in addition to GitHub
+  Releases).
+- CI: `npm audit --audit-level=high`; Dependabot for npm and Actions.
+- Fixed `npm run watch` (`watch:esbuild` / `watch:frontend`).
+- Removed unused `@vscode/test-cli` / `@vscode/test-electron` leftovers.
+
+### Fixed
+
+- Closing the designer (or VS Code) with unsaved DDS edits now prompts to
+  save. Pending source-pane / nudge edits are flushed first so the document
+  is marked dirty before the prompt.
+
+### Removed
+
+- Stale Yeoman `vsc-extension-quickstart.md`.
+
 ## [0.2.1] - 2026-07-29
 
 ### Fixed

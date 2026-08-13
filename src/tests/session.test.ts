@@ -12,6 +12,10 @@ const vscodeMocks = vi.hoisted(() => ({
   applyEdit: vi.fn(() => Promise.resolve(true)),
 }));
 
+const editorSwitchMocks = vi.hoisted(() => ({
+  openDdsView: vi.fn(() => Promise.resolve(true)),
+}));
+
 vi.mock(`vscode`, () => {
   class Position {
     constructor(public line: number, public character: number) {}
@@ -64,11 +68,17 @@ vi.mock(`vscode`, () => {
       applyEdit: vscodeMocks.applyEdit,
       textDocuments: [] as unknown[],
       onDidChangeTextDocument: vi.fn(() => ({ dispose: () => {} })),
+      fs: {
+        writeFile: vi.fn(),
+        readFile: vi.fn(),
+      },
     },
   };
 });
 
-vi.mock(`../editorSwitch`, () => ({ openDdsView: vi.fn() }));
+vi.mock(`../editorSwitch`, () => ({
+  openDdsView: editorSwitchMocks.openDdsView,
+}));
 vi.mock(`../protectedSource`, () => ({
   isProtectedDdsSource: vi.fn(async () => false),
   protectedSourceMessage: vi.fn(() => ``),
@@ -82,7 +92,7 @@ vi.mock(`fs`, () => ({
 }));
 
 import { WorkspaceEdit } from "vscode";
-import { DspfDesignerSession } from "../ui/index";
+import { designerTabTitle, DspfDesignerSession } from "../ui/index";
 
 function makeDocument(lines: string[]) {
   const text = lines.join(`\n`);
@@ -131,6 +141,8 @@ describe(`DspfDesignerSession`, () => {
     vscodeMocks.showInputBox.mockClear();
     vscodeMocks.applyEdit.mockReset();
     vscodeMocks.applyEdit.mockResolvedValue(true);
+    editorSwitchMocks.openDdsView.mockReset();
+    editorSwitchMocks.openDdsView.mockResolvedValue(true);
   });
 
   it(`routes pure-insert updateFormat through insert (not replace)`, async () => {
@@ -249,5 +261,67 @@ describe(`DspfDesignerSession`, () => {
 
     expect(vscodeMocks.showWarningMessage).toHaveBeenCalled();
     expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+  });
+
+  it(`rejects placeDatabaseFields with invalid payloads`, async () => {
+    const lines = [`     A          R HEAD`, `     A                                  1  2'Hi'`];
+    const { session, panel } = makeSession(lines);
+    panel.posted.length = 0;
+
+    await session.handleMessage({
+      command: `placeDatabaseFields`,
+      recordFormat: `HEAD`,
+      fields: [
+        {
+          name: `BAD NAME`,
+          displayType: `both`,
+          position: { x: 1, y: 3 },
+          length: 5,
+          decimals: 0,
+          conditions: [],
+          keywords: [],
+          startRange: 0,
+        },
+      ],
+    });
+
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+  });
+
+  it(`sanitizes showError messages from the webview`, async () => {
+    const lines = [`     A          R HEAD`];
+    const { session } = makeSession(lines);
+
+    await session.handleMessage({
+      command: `showError`,
+      message: `  boom\u0000  `,
+    });
+
+    expect(vscodeMocks.showErrorMessage).toHaveBeenCalledWith(`boom`);
+  });
+
+  it(`labels designer tabs with a Designer suffix`, () => {
+    expect(designerTabTitle(`/QSYS.LIB/TOLENTDS.LIB/QDDSSRC.FILE/SAMPLEDSP.DSPF`)).toBe(
+      `SAMPLEDSP.DSPF [Designer]`
+    );
+    expect(designerTabTitle(`C:\\\\work\\\\orders.prtf`)).toBe(`orders.prtf [Designer]`);
+    expect(designerTabTitle(``)).toBe(`DDS [Designer]`);
+  });
+
+  it(`revealInSource opens the text editor on the requested lines`, async () => {
+    const lines = [`     A          R HEAD`, `     A            FIELD1         5A  B  1  2`];
+    const { session, document } = makeSession(lines);
+
+    await session.handleMessage({
+      command: `revealInSource`,
+      startLine: 1,
+      endLine: 1,
+    });
+
+    expect(editorSwitchMocks.openDdsView).toHaveBeenCalledWith(document.uri, `source`, {
+      revealLines: { startLine: 1, endLine: 1 },
+    });
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
   });
 });

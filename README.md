@@ -1,26 +1,54 @@
 # IBM i Display File Designer
 
-Visual designer for IBM i display files (`.dspf`) and printer files (`.prtf`) — a
-VS Code custom editor aimed at Rational Developer for i Screen Designer
+Visual designer for IBM i display files (`.dspf`) and printer files (`.prtf`) —
+a VS Code custom editor aimed at Rational Developer for i Screen Designer
 workflows.
 
-> Still in active development. See the
-> [project board](https://github.com/orgs/codefori/projects/7) for what's next.
+Published as **`halcyontechltd.vscode-ibmi-renderer`**. See the
+[project board](https://github.com/orgs/codefori/projects/7) for what's next.
 
 ---
 
 ## Contents
 
+- [Install](#install)
 - [Highlights](#highlights)
 - [Requirements](#requirements)
-- [Getting started](#getting-started)
 - [Opening the designer](#opening-the-designer)
 - [Works with the IBM i Development Pack](#works-with-the-ibm-i-development-pack)
 - [Development](#development)
 - [Testing](#testing)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
+- [Security](#security)
 - [License](#license)
+
+## Install
+
+### VS Code Marketplace
+
+Search for **IBM i Display File Designer** in the Extensions view, or install:
+
+```text
+ext install halcyontechltd.vscode-ibmi-renderer
+```
+
+Marketplace:
+https://marketplace.visualstudio.com/items?itemName=halcyontechltd.vscode-ibmi-renderer
+
+### Open VSX
+
+https://open-vsx.org/extension/halcyontechltd/vscode-ibmi-renderer
+
+### GitHub Release VSIX
+
+1. Download `vscode-ibmi-renderer.vsix` from the
+   [latest GitHub Release](https://github.com/codefori/vscode-ibmi-renderer/releases).
+2. In VS Code: **Extensions: Install from VSIX…** and select the file.
+
+### From source
+
+See [Development](#development) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Highlights
 
@@ -42,41 +70,31 @@ workflows.
 
 ## Requirements
 
-- **VS Code** 1.97 or newer.
-- **Node.js** 18+ (for building from source).
+- **VS Code** 1.97 or newer (trusted workspace required for the designer).
 - Optional: **[Code for IBM i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi)**
   — required only for editing remote `member`/`streamfile` DDS and for the
   database-field browser.
 - Optional: **IBMi Languages** (`barrettotte.ibmi-languages`) — supplies the
   `dds.dspf` / `dds.prtf` language IDs used for CodeLens and command
   visibility.
-
-## Getting started
-
-Clone and install:
-
-```powershell
-git clone https://github.com/codefori/vscode-ibmi-renderer.git
-cd vscode-ibmi-renderer
-npm install
-npm run compile
-```
-
-Press **F5** to launch the Extension Development Host, then open
-[`samples/DEMO.dspf`](samples/DEMO.dspf).
+- **Node.js 20** only if building from source.
 
 ## Opening the designer
 
-- From a DDS text editor: the title-bar **Edit / Preview** action, or the
-  CodeLens at the top of the file.
+Try the samples after install: [`samples/DEMO.dspf`](samples/DEMO.dspf) or
+[`samples/SUBFILE.dspf`](samples/SUBFILE.dspf) (subfile + window).
+
+- From a DDS text editor: the title-bar **Edit / Preview** action, the
+  CodeLens at the top of the file, or **Edit** on a record-format line
+  (opens the designer on that format).
 - From Explorer, Object Browser, or IFS Browser: right-click →
   **Edit / Preview**.
 - Anywhere: **Open With… → IBM i Display File Designer**.
-- To flip between visual and text views: **Design | Source** control in the
-  designer toolbar, or the editor-title icons.
-
-Only one view stays open at a time for a given DDS URI (see
-[`src/extension.ts`](src/extension.ts) `enforceExclusiveDdsTabs`).
+- The designer and the normal DDS text editor can stay open **side by side**.
+  Both share the same `TextDocument`, so canvas edits update the text editor
+  immediately and typing in source refreshes the designer (lightly debounced).
+  Use the title-bar **Open DDS Source Beside** action (or Open With → Text
+  Editor) while the designer is active.
 
 The custom editor uses `priority: "option"`, so it does **not** steal the
 default text editor for DDS sources.
@@ -95,16 +113,24 @@ This extension is designed to sit alongside the
 
 ## Development
 
-Common scripts (from `package.json`):
+```powershell
+git clone https://github.com/codefori/vscode-ibmi-renderer.git
+cd vscode-ibmi-renderer
+npm ci
+npm run compile
+```
+
+Press **F5** to launch the Extension Development Host, then open a sample DDS.
 
 | Command                 | What it does                                          |
 |-------------------------|-------------------------------------------------------|
 | `npm run compile`       | Frontend copy → type-check → lint → esbuild bundle.   |
-| `npm run watch`         | Type-check + esbuild in watch mode (via `npm-run-all`). |
+| `npm run watch`         | Frontend copy + esbuild watch for host and webview.   |
 | `npm run check-types`   | `tsc --noEmit` only.                                  |
 | `npm run lint`          | ESLint on `src`.                                      |
 | `npm run package`       | Production build (same as compile with `--production`). |
-| `npm test`              | Vitest suite for the DDS model.                       |
+| `npm run vsix`          | Package `vscode-ibmi-renderer.vsix`.                  |
+| `npm test`              | Vitest suite for the DDS model and host session.      |
 
 The webview bundle is produced by `esbuild.js`; static vendor assets
 (`@vscode-elements/elements`, `@vscode/codicons`, `konva`) are copied into
@@ -112,8 +138,8 @@ The webview bundle is produced by `esbuild.js`; static vendor assets
 
 ## Testing
 
-Model-level tests live in [`src/tests/dspf.test.ts`](src/tests/dspf.test.ts) and
-run under Vitest:
+Model and session tests live under [`src/tests/`](src/tests/) and run under
+Vitest:
 
 ```powershell
 npm test
@@ -132,15 +158,20 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for:
 - the `DdsUpdate` insert-vs-replace convention,
 - how comments and blank lines survive round-tripping,
 - the remote disconnect / reconnect lifecycle,
+- webview CSP / message validation trust boundary,
 - and the database-field browser flow.
 
 ## Contributing
 
-- Please open an issue before large changes so we can align on the DDS
-  round-trip contract.
-- Match the existing style: two-space indent, single backticks for string
-  literals in `src/`, `@ts-check`-friendly JSDoc in the webview.
-- Every model change needs a Vitest case.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, PR checklist, and the
+maintainer release runbook. Please open an issue before large DDS contract
+changes.
+
+This project follows the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+## Security
+
+See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
 ## License
 

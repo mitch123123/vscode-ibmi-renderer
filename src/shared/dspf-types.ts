@@ -78,6 +78,8 @@ export interface FieldInfoData {
    * (I/O/B/H/M/P). Preserved so re-emit never drops the definition line.
    */
   rawUsage?: string;
+  /** Non-passthrough source lines owned by this field (definition + keywords). */
+  ownedLines?: number[];
 }
 
 export interface RecordInfoData {

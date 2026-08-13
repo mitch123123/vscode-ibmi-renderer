@@ -1,25 +1,64 @@
 /** @typedef {import('../../src/shared/dspf-types').FieldInfoData} FieldInfo */
 /** @typedef {import('../../src/shared/dspf-types').RecordInfoData} RecordInfo */
 /** @typedef {import('../../src/shared/dspf-types').DisplayFileData} DisplayFile */
+/** @typedef {import('../../src/shared/dspf-types').Keyword} Keyword */
 /** @typedef {import("konva").default.Stage} Stage */
 /** @typedef {import("konva").default.Layer} Layer */
 /** @typedef {import("konva").default.Group} Group */
 
 import {
-  colours, SELECTED_COLOUR, PROTECT_COLOUR, dateFormats, timeFormats,
+  colours, SELECTED_COLOUR, PROTECT_COLOUR, OVERLAP_COLOUR, dateFormats, timeFormats,
   GLOBAL_RECORD_FORMAT, pxwPerChar, pxhPerLine, pxhPerChar,
   RULER_LEFT, RULER_TOP, snapToFixedGrid, gridCordsToFieldCords,
   widthInP, heightInP, parseParms, conditionsPass
 } from "./constants.js";
 import { formatEditCode } from "./editcode.js";
 import { activeIndicators, clearAllIndicators } from "./indicators.js";
-import { clearKeywordEditor } from "./keywordEditor.js";
+import { clearKeywordEditor, renderSections } from "./keywordEditor.js";
 import { updateRecordFormatSidebar, updateSelectedFieldSidebar, showFieldPalette } from "./sidebar.js";
 import { getDraggingField, clearDraggingField, isValidRecordName } from "./palette.js";
 import { requestHostInput, requestHostConfirm, showHostError } from "./hostDialogs.js";
 import { vscode } from "./vscodeApi.js";
 import { announce } from "./a11y.js";
-import { clampFieldPosition } from "./coords.js";
+import {
+  clampFieldPosition,
+  fieldContentLength,
+  formatOverlapWarning,
+  isSameFieldRef,
+  maxStartColumnForLength,
+} from "./coords.js";
+
+/** @type {ReturnType<typeof setTimeout>|undefined} */
+let designErrorTimer = undefined;
+/** @type {string|undefined} */
+let designErrorVisible = undefined;
+
+/**
+ * Brief on-canvas error for invalid design moves (also announced for a11y).
+ * @param {string} message
+ */
+function showDesignError(message) {
+  const el = document.getElementById(`designErrorToast`);
+  if (el) {
+    const wasHidden = el.hidden || designErrorVisible !== message;
+    el.textContent = message;
+    el.hidden = false;
+    if (wasHidden) {
+      announce(message);
+    }
+    designErrorVisible = message;
+    if (designErrorTimer) {
+      clearTimeout(designErrorTimer);
+    }
+    designErrorTimer = setTimeout(() => {
+      designErrorTimer = undefined;
+      designErrorVisible = undefined;
+      el.hidden = true;
+    }, 3200);
+  } else {
+    announce(message);
+  }
+}
 
 /** @type {DisplayFile|undefined} */
 let activeDocument = undefined;
@@ -68,13 +107,26 @@ let formatTabMenuCleanup = undefined;
  * @param {DisplayFile} newDoc
  * @param {"dds.dspf"|"dds.prtf"} type
  * @param {boolean} withRerender
- * @param {{ restoreSelection?: boolean }} [opts]
+ * @param {{ restoreSelection?: boolean, selectFormat?: string }} [opts]
  */
 export function loadDDS(newDoc, type, withRerender = true, opts = {}) {
   cancelPendingNudge();
   const prevSelection = selectedItems.map(s => s.field.name).filter(Boolean);
   activeDocument = newDoc;
   activeDocumentType = type || `dds.dspf`;
+
+  if (opts.selectFormat) {
+    lastSelectedFormat = opts.selectFormat;
+    editorMode = `design`;
+    const badge = document.getElementById(`modeBadge`);
+    if (badge) {
+      badge.innerText = `Design`;
+    }
+    const modeBtn = document.getElementById(`modeToggle`);
+    if (modeBtn) {
+      modeBtn.innerText = `Switch to Preview`;
+    }
+  }
 
   if (withRerender) {
     if (opts.restoreSelection) {
@@ -99,10 +151,6 @@ export function getLastSelectedFormat() {
 
 export function getEditorMode() {
   return editorMode;
-}
-
-export function requestShowSource() {
-  vscode.postMessage({ command: `showSource` });
 }
 
 export function setConnectionConnected(connected) {
@@ -134,6 +182,42 @@ export function setEditorMode(mode) {
   if (lastSelectedFormat) {
     setWindowForFormat(lastSelectedFormat);
   }
+}
+
+/**
+ * Switch to Design mode and activate a record-format tab (CodeLens Edit).
+ * @param {string} formatName
+ */
+export function selectRecordFormat(formatName) {
+  const name = (formatName || ``).trim();
+  if (!name || !activeDocument) {
+    return;
+  }
+  const exists = activeDocument.formats.some(
+    (f) => f.name === name && f.name !== GLOBAL_RECORD_FORMAT
+  );
+  if (!exists) {
+    return;
+  }
+
+  editorMode = `design`;
+  const badge = document.getElementById(`modeBadge`);
+  if (badge) {
+    badge.innerText = `Design`;
+  }
+  const modeBtn = document.getElementById(`modeToggle`);
+  if (modeBtn) {
+    modeBtn.innerText = `Switch to Preview`;
+  }
+
+  if (name === lastSelectedFormat) {
+    setWindowForFormat(name);
+    return;
+  }
+  overlayFormats = [];
+  clearAllIndicators();
+  clearKeywordEditor();
+  setWindowForFormat(name);
 }
 
 /**
@@ -178,6 +262,7 @@ function screenToFieldPosition(screenX, screenY, opts = {}) {
     maxX,
     maxY,
     wasY0: opts.wasY0 || opts.preserveY0,
+    length: opts.length,
   });
 }
 
@@ -431,7 +516,25 @@ export function setWindowForFormat(chosenFormat) {
     const y = e.clientY - rect.top - RULER_TOP;
     const snapped = snapToFixedGrid(Math.max(0, x), Math.max(0, y));
     const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-    field.position = screenToFieldPosition(screen.x, screen.y);
+    const bounds = currentPositionBounds();
+    const len = fieldContentLength(field);
+    let rawX = screen.x;
+    let rawY = screen.y;
+    if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
+      rawX = screen.x - (activeWindowOrigin.originX - 1);
+      rawY = screen.y - (activeWindowOrigin.originY - 1);
+    }
+    const nextPos = clampFieldPosition(rawX, rawY, { ...bounds, length: len });
+    if (rawX > nextPos.x) {
+      showDesignError(
+        `Content past record length of ${bounds.maxX} (length ${len}). Placed at column ${nextPos.x}.`,
+      );
+    }
+    field.position = nextPos;
+    const overlapMsg = formatOverlapWarning(field, [...currentFormatFields(), field]);
+    if (overlapMsg) {
+      showDesignError(overlapMsg);
+    }
     sendNewField(lastSelectedFormat, field);
   };
 
@@ -881,6 +984,40 @@ function addFieldsToLayer(layer, format, displayOnly, windowOrigin) {
 }
 
 /**
+ * @param {{ value: string }} labelInfo
+ * @param {Keyword[]} keywords
+ */
+function applyDatePreview(labelInfo, keywords) {
+  const dateSep = keywords.find(k => k.name === `DATSEP`);
+  const dateFormat = keywords.find(k => k.name === `DATFMT`);
+  if (dateFormat) {
+    labelInfo.value = dateFormats[dateFormat.value] || `?FORMAT?`;
+    if (dateSep && String(dateSep.value || ``).toUpperCase() !== `*JOB`) {
+      labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), dateSep.value);
+    }
+  } else {
+    labelInfo.value = dateFormats[`*ISO`];
+  }
+}
+
+/**
+ * @param {{ value: string }} labelInfo
+ * @param {Keyword[]} keywords
+ */
+function applyTimePreview(labelInfo, keywords) {
+  const sep = keywords.find(k => k.name === `TIMSEP`);
+  const format = keywords.find(k => k.name === `TIMFMT`);
+  if (format) {
+    labelInfo.value = timeFormats[format.value] || `?FORMAT?`;
+    if (sep && String(sep.value || ``).toUpperCase() !== `*JOB`) {
+      labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), sep.value);
+    }
+  } else {
+    labelInfo.value = timeFormats[`*HMS`];
+  }
+}
+
+/**
  * @param {FieldInfo} fieldInfo
  * @param {boolean} displayOnly
  * @param {{ originX?: number, originY?: number }|undefined} windowOrigin
@@ -934,32 +1071,12 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
       case `USER`:
         labelInfo.value = `USERNAME__`;
         break;
-      case `DATE`: {
-        const dateSep = effectiveKeywords.find(k => k.name === `DATSEP`);
-        const dateFormat = effectiveKeywords.find(k => k.name === `DATFMT`);
-        if (dateFormat) {
-          labelInfo.value = dateFormats[dateFormat.value] || `?FORMAT?`;
-          if (dateSep && dateSep.value.toUpperCase() !== `*JOB`) {
-            labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), dateSep.value);
-          }
-        } else {
-          labelInfo.value = dateFormats[`*ISO`];
-        }
+      case `DATE`:
+        applyDatePreview(labelInfo, effectiveKeywords);
         break;
-      }
-      case `TIME`: {
-        const sep = effectiveKeywords.find(k => k.name === `TIMSEP`);
-        const format = effectiveKeywords.find(k => k.name === `TIMFMT`);
-        if (format) {
-          labelInfo.value = timeFormats[format.value] || `?FORMAT?`;
-          if (sep && sep.value.toUpperCase() !== `*JOB`) {
-            labelInfo.value = labelInfo.value.replace(new RegExp(`[./-:]`, `g`), sep.value);
-          }
-        } else {
-          labelInfo.value = timeFormats[`*HMS`];
-        }
+      case `TIME`:
+        applyTimePreview(labelInfo, effectiveKeywords);
         break;
-      }
       case `UNDERLINE`:
         labelInfo.textDecoration = `underline`;
         break;
@@ -990,6 +1107,15 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
         break;
     }
   });
+
+  // DDS types L/T preview via DATFMT/TIMFMT — do not require DATE/TIME keywords
+  // (those are for system-date/time constants).
+  const fieldType = (fieldInfo.type || ``).toUpperCase();
+  if (fieldType === `L` && !effectiveKeywords.some(k => k.name === `DATE`)) {
+    applyDatePreview(labelInfo, effectiveKeywords);
+  } else if (fieldType === `T` && !effectiveKeywords.some(k => k.name === `TIME`)) {
+    applyTimePreview(labelInfo, effectiveKeywords);
+  }
 
   const edtcde = effectiveKeywords.find(k => k.name === `EDTCDE`);
   const edtwrd = effectiveKeywords.find(k => k.name === `EDTWRD`);
@@ -1045,27 +1171,39 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
   }
 
   let group = new Konva.Group(boxInfo);
+  const dragLength = fieldContentLength(fieldInfo);
 
   group.on('dragmove', (e) => {
     const cGroup = e.target;
     const boxPos = cGroup.absolutePosition();
     let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+    const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
+    const hitRight = snapped.x > widthInP(maxStartCol - 1);
+    const hitBottom = snapped.y > heightInP(renderRows - 1);
     snapped = {
-      x: Math.min(Math.max(0, snapped.x), widthInP(renderCols - 1)),
+      x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
       y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1)),
     };
     cGroup.absolutePosition({
       x: snapped.x + RULER_LEFT,
       y: snapped.y + RULER_TOP
     });
+    if (hitRight) {
+      showDesignError(
+        `Content past record length of ${renderCols} (length ${dragLength}).`,
+      );
+    } else if (hitBottom) {
+      showDesignError(`Row must be between 1 and ${renderRows}.`);
+    }
   });
 
   group.on(`dragend`, (e) => {
     const cGroup = e.target;
     const boxPos = cGroup.absolutePosition();
     let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+    const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
     snapped = {
-      x: Math.min(Math.max(0, snapped.x), widthInP(renderCols - 1)),
+      x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
       y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1)),
     };
     cGroup.absolutePosition({
@@ -1074,7 +1212,10 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
     });
 
     const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-    const newPos = screenToFieldPosition(screen.x, screen.y, { wasY0: fieldInfo.position.y === 0 });
+    const newPos = screenToFieldPosition(screen.x, screen.y, {
+      wasY0: fieldInfo.position.y === 0,
+      length: dragLength,
+    });
     const dx = newPos.x - fieldInfo.position.x;
     const dy = (fieldInfo.position.y === 0) ? 0 : (newPos.y - fieldInfo.position.y);
 
@@ -1083,17 +1224,47 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
       : [{ group: cGroup, field: fieldInfo }];
 
     const bounds = currentPositionBounds();
-    const updates = moving.map(({ field }) => ({
-      originalFieldName: field.name,
-      fieldInfo: {
-        ...field,
-        position: clampFieldPosition(
-          field.position.x + dx,
-          field.position.y === 0 ? 0 : field.position.y + dy,
-          { ...bounds, wasY0: field.position.y === 0 },
-        ),
+    let clampedAny = false;
+    const updates = moving.map(({ field }) => {
+      const len = fieldContentLength(field);
+      const rawX = field.position.x + dx;
+      const rawY = field.position.y === 0 ? 0 : field.position.y + dy;
+      const position = clampFieldPosition(rawX, rawY, {
+        ...bounds,
+        wasY0: field.position.y === 0,
+        length: len,
+      });
+      if (rawX > position.x || (rawY > 0 && rawY > position.y)) {
+        clampedAny = true;
       }
-    }));
+      return {
+        originalFieldName: field.name,
+        fieldInfo: {
+          ...field,
+          position,
+        }
+      };
+    });
+
+    if (clampedAny) {
+      showDesignError(
+        `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`,
+      );
+    }
+
+    const peers = currentFormatFields().map((f) => {
+      const moved = updates.find(
+        (u) => u.originalFieldName === f.name || isSameFieldRef(u.fieldInfo, f),
+      );
+      return moved ? moved.fieldInfo : f;
+    });
+    for (const u of updates) {
+      const overlapMsg = formatOverlapWarning(u.fieldInfo, peers);
+      if (overlapMsg) {
+        showDesignError(overlapMsg);
+        break;
+      }
+    }
 
     if (updates.length === 1) {
       fieldInfo.position.x = updates[0].fieldInfo.position.x;
@@ -1106,7 +1277,7 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
 
   group.add(new Konva.Rect({
     id: `bg`,
-    fill: colours.BLK,
+    fill: fieldBackgroundColour(fieldInfo, false),
     x: 0,
     y: 0,
     width: boxInfo.width,
@@ -1132,9 +1303,57 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
         setActiveField(group, fieldInfo);
       }
     });
+    group.on(`dblclick`, (e) => {
+      e.cancelBubble = true;
+      revealFieldInSource(fieldInfo);
+    });
+    group.on(`dbltap`, (e) => {
+      e.cancelBubble = true;
+      revealFieldInSource(fieldInfo);
+    });
   }
 
   return group;
+}
+
+/**
+ * Inclusive 0-based source lines covering a field definition (and its keywords).
+ * @param {FieldInfo} field
+ * @returns {{ startLine: number, endLine: number } | undefined}
+ */
+function fieldSourceRange(field) {
+  if (!field) {
+    return undefined;
+  }
+  const owned = Array.isArray(field.ownedLines) && field.ownedLines.length > 0
+    ? field.ownedLines.filter((n) => Number.isInteger(n) && n >= 0)
+    : null;
+  const start = owned && owned.length > 0
+    ? Math.min(...owned)
+    : field.startRange;
+  const end = owned && owned.length > 0
+    ? Math.max(...owned)
+    : (field.endRange ?? field.startRange);
+  if (!Number.isInteger(start) || start < 0) {
+    return undefined;
+  }
+  if (!Number.isInteger(end) || end < start) {
+    return undefined;
+  }
+  return { startLine: start, endLine: end };
+}
+
+/** Open/focus the DDS text editor on this field's source lines. */
+function revealFieldInSource(field) {
+  const range = fieldSourceRange(field);
+  if (!range) {
+    return;
+  }
+  vscode.postMessage({
+    command: `revealInSource`,
+    startLine: range.startLine,
+    endLine: range.endLine,
+  });
 }
 
 /**
@@ -1148,11 +1367,37 @@ function findFieldByName(name) {
   return format?.fields.find(f => f.name === name);
 }
 
+/**
+ * Fields on the active record format (for overlap checks / selection UI).
+ * @returns {FieldInfo[]}
+ */
+function currentFormatFields() {
+  if (!activeDocument || !lastSelectedFormat) {
+    return [];
+  }
+  const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
+  return format?.fields || [];
+}
+
+/**
+ * @param {FieldInfo} field
+ * @param {boolean} selected
+ */
+function fieldBackgroundColour(field, selected) {
+  if (selected) {
+    return SELECTED_COLOUR;
+  }
+  if (formatOverlapWarning(field, currentFormatFields())) {
+    return OVERLAP_COLOUR;
+  }
+  return colours.BLK;
+}
+
 function clearSelection(updatePalette = true) {
-  selectedItems.forEach(({ group }) => {
+  selectedItems.forEach(({ group, field }) => {
     const bg = group.findOne(`#bg`);
     if (bg) {
-      bg.fill(colours.BLK);
+      bg.fill(fieldBackgroundColour(field, false));
     }
   });
   selectedItems = [];
@@ -1171,20 +1416,18 @@ function updateSelectionUi(opts = {}) {
     updateSelectedFieldSidebar(
       selected.field,
       (field) => sendFieldUpdate(lastSelectedFormat, originalFieldName, field),
-      () => sendDelete(lastSelectedFormat, originalFieldName)
+      () => sendDelete(lastSelectedFormat, originalFieldName),
+      {
+        generalTools: createSelectionTools(false),
+        bounds: currentPositionBounds(),
+        peerFields: currentFormatFields(),
+      }
     );
-    prependSelectionTools(document.getElementById(`fieldInfoSidebar`), false);
     if (!opts.silent) {
       announce(`Selected ${selected.field.name || `constant`} at row ${selected.field.position?.y}, column ${selected.field.position?.x}`);
     }
   } else if (selectedItems.length > 1) {
-    const sidebar = document.getElementById(`fieldInfoSidebar`);
-    sidebar.innerHTML = ``;
-    const count = document.createElement(`div`);
-    count.style.padding = `1em`;
-    count.innerText = `${selectedItems.length} fields selected`;
-    sidebar.appendChild(count);
-    prependSelectionTools(sidebar, true);
+    updateMultiSelectSidebar();
     if (!opts.silent) {
       announce(`${selectedItems.length} fields selected`);
     }
@@ -1193,19 +1436,53 @@ function updateSelectionUi(opts = {}) {
   } else {
     const sidebar = document.getElementById(`fieldInfoSidebar`);
     if (sidebar) {
-      sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
+      sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
     }
   }
 }
 
 /**
- * Align / color / DSPATR quick tools for the current selection.
- * @param {HTMLElement|null} sidebar
- * @param {boolean} multi
+ * Multi-select Fields panel: count header + collapsible Keywords tools.
  */
-function prependSelectionTools(sidebar, multi) {
-  if (!sidebar || !editsAllowed()) {
+function updateMultiSelectSidebar() {
+  const sidebar = document.getElementById(`fieldInfoSidebar`);
+  if (!sidebar) {
     return;
+  }
+  const header = document.createElement(`div`);
+  header.className = `panel-section-header`;
+  header.textContent = `${selectedItems.length} fields selected`;
+
+  /** @type {{title: string, html: string|Element, open?: boolean}[]} */
+  const sections = [];
+  const tools = createSelectionTools(true);
+  if (tools) {
+    sections.push({ title: `Keywords`, open: true, html: tools });
+  }
+  renderSections(sidebar, sections);
+  sidebar.insertBefore(header, sidebar.firstChild);
+
+  const peers = currentFormatFields();
+  const overlapNotes = selectedItems
+    .map(({ field }) => formatOverlapWarning(field, peers))
+    .filter(Boolean);
+  if (overlapNotes.length > 0) {
+    const warn = document.createElement(`div`);
+    warn.className = `panel-overlap-warning`;
+    warn.setAttribute(`role`, `alert`);
+    warn.textContent = [...new Set(overlapNotes)].join(` `);
+    sidebar.insertBefore(warn, header.nextSibling);
+  }
+}
+
+/**
+ * Align / color / DSPATR quick tools for the current selection.
+ * @param {boolean} multi
+ * @returns {HTMLElement|undefined}
+ */
+function createSelectionTools(multi) {
+  if (!editsAllowed()) {
+    return undefined;
   }
   const tools = document.createElement(`div`);
   tools.className = `selection-tools`;
@@ -1234,7 +1511,8 @@ function prependSelectionTools(sidebar, multi) {
   const colorRow = document.createElement(`div`);
   colorRow.className = `selection-tools-row`;
   const colorSelect = document.createElement(`select`);
-  colorSelect.className = `prop-select`;
+  colorSelect.className = `prop-select selection-color-select`;
+  colorSelect.setAttribute(`aria-label`, `COLOR`);
   colorSelect.innerHTML = `<option value="">COLOR…</option>`;
   for (const c of [`GRN`, `WHT`, `RED`, `TRQ`, `YLW`, `PNK`, `BLU`]) {
     const o = document.createElement(`option`);
@@ -1254,12 +1532,13 @@ function prependSelectionTools(sidebar, multi) {
     const btn = document.createElement(`vscode-button`);
     btn.setAttribute(`secondary`, `true`);
     btn.innerText = atr;
+    btn.title = `DSPATR(${atr})`;
     btn.onclick = () => applyKeywordToSelection(`DSPATR`, atr, true);
     colorRow.appendChild(btn);
   }
   tools.appendChild(colorRow);
 
-  sidebar.insertBefore(tools, sidebar.firstChild);
+  return tools;
 }
 
 /**
@@ -1276,12 +1555,12 @@ function alignSelectedFields(mode) {
 
   if (mode === `center` && selectedItems.length === 1) {
     const item = selectedItems[0];
-    const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
+    const len = fieldContentLength(item.field);
     const next = JSON.parse(JSON.stringify(item.field));
     next.position = clampFieldPosition(
       Math.floor((cols - len) / 2) + 1,
       next.position.y,
-      { ...bounds, wasY0: next.position.y === 0 },
+      { ...bounds, wasY0: next.position.y === 0, length: len },
     );
     updates.push({ originalFieldName: item.field.name, fieldInfo: next });
   } else if (mode === `left` || mode === `right` || mode === `top`) {
@@ -1293,9 +1572,11 @@ function alignSelectedFields(mode) {
       .filter((y) => y > 0);
     const targetX = mode === `left` ? Math.min(...xs) : mode === `right` ? Math.max(...xs) : undefined;
     const targetY = mode === `top` && ys.length > 0 ? Math.min(...ys) : undefined;
+    let clampedAny = false;
     for (const item of selectedItems) {
       const next = JSON.parse(JSON.stringify(item.field));
       const wasY0 = next.position.y === 0;
+      const len = fieldContentLength(next);
       let x = next.position.x;
       let y = next.position.y;
       if (targetX != null) {
@@ -1304,17 +1585,26 @@ function alignSelectedFields(mode) {
       if (targetY != null && !wasY0) {
         y = targetY;
       }
-      next.position = clampFieldPosition(x, y, { ...bounds, wasY0 });
+      const position = clampFieldPosition(x, y, { ...bounds, wasY0, length: len });
+      if (x > position.x) {
+        clampedAny = true;
+      }
+      next.position = position;
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
+    }
+    if (clampedAny) {
+      showDesignError(
+        `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`,
+      );
     }
   } else if (mode === `center` && selectedItems.length > 1) {
     for (const item of selectedItems) {
-      const len = Math.max(1, item.field.length || String(item.field.value || ``).length || 1);
+      const len = fieldContentLength(item.field);
       const next = JSON.parse(JSON.stringify(item.field));
       next.position = clampFieldPosition(
         Math.floor((cols - len) / 2) + 1,
         next.position.y,
-        { ...bounds, wasY0: next.position.y === 0 },
+        { ...bounds, wasY0: next.position.y === 0, length: len },
       );
       updates.push({ originalFieldName: item.field.name, fieldInfo: next });
     }
@@ -1379,7 +1669,7 @@ function addToSelection(group, fieldInfo, updateUi = true) {
   selectedItems.push({ group, field: fieldInfo });
   const bg = group.findOne(`#bg`);
   if (bg) {
-    bg.fill(SELECTED_COLOUR);
+    bg.fill(fieldBackgroundColour(fieldInfo, true));
   }
   if (updateUi) {
     updateSelectionUi();
@@ -1395,13 +1685,13 @@ function toggleSelection(group, fieldInfo) {
   if (idx >= 0) {
     const bg = selectedItems[idx].group.findOne(`#bg`);
     if (bg) {
-      bg.fill(colours.BLK);
+      bg.fill(fieldBackgroundColour(selectedItems[idx].field, false));
     }
     selectedItems.splice(idx, 1);
     updateSelectionUi();
-  } else {
-    addToSelection(group, fieldInfo);
+    return;
   }
+  addToSelection(group, fieldInfo);
 }
 
 /**
@@ -1487,9 +1777,14 @@ function syncFormatTabActive(formatName) {
  * @param {string} formatName
  */
 function activateFormatTab(formatName) {
-  if (!formatName || formatName === lastSelectedFormat) {
+  if (!formatName) {
     return;
   }
+
+  if (formatName === lastSelectedFormat) {
+    return;
+  }
+
   overlayFormats = [];
   clearAllIndicators();
   clearKeywordEditor();
@@ -1780,7 +2075,7 @@ function cancelPendingNudge() {
   pendingNudge = undefined;
 }
 
-function flushPendingNudge() {
+export function flushPendingNudge() {
   if (nudgeTimer) {
     clearTimeout(nudgeTimer);
     nudgeTimer = undefined;
@@ -1854,11 +2149,12 @@ export function setupKeyboard() {
         const fields = clipboard.map((field) => {
           const copy = JSON.parse(JSON.stringify(field));
           const wasY0 = field.position.y === 0;
+          const len = fieldContentLength(copy);
           // Preserve printer y=0; otherwise paste one row below the original.
           copy.position = clampFieldPosition(
             field.position.x,
             wasY0 ? 0 : field.position.y + 1,
-            { ...bounds, wasY0 },
+            { ...bounds, wasY0, length: len },
           );
           const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
           copy.name = uniqueFieldName(`${base}_C`, existing);
@@ -1949,13 +2245,20 @@ export function setupKeyboard() {
 
     // Mutate local field positions so held keys accumulate before the flush.
     const bounds = currentPositionBounds();
+    let clampedAny = false;
     const updates = selectedItems.map(({ field, group }) => {
       const wasY0 = field.position.y === 0;
-      const nextPos = clampFieldPosition(
-        field.position.x + dx,
-        wasY0 ? 0 : field.position.y + dy,
-        { ...bounds, wasY0 },
-      );
+      const len = fieldContentLength(field);
+      const rawX = field.position.x + dx;
+      const rawY = wasY0 ? 0 : field.position.y + dy;
+      const nextPos = clampFieldPosition(rawX, rawY, {
+        ...bounds,
+        wasY0,
+        length: len,
+      });
+      if (rawX > nextPos.x || (rawY > 0 && rawY > nextPos.y)) {
+        clampedAny = true;
+      }
       field.position = nextPos;
       if (group) {
         group.absolutePosition(fieldPositionToPixels(nextPos));
@@ -1966,6 +2269,26 @@ export function setupKeyboard() {
       };
     });
     fieldLayer?.batchDraw();
+
+    if (clampedAny) {
+      showDesignError(
+        `Content past record length of ${bounds.maxX}. Fields were kept inside the screen.`,
+      );
+    } else {
+      const peers = currentFormatFields().map((f) => {
+        const moved = updates.find(
+          (u) => u.originalFieldName === f.name || isSameFieldRef(u.fieldInfo, f),
+        );
+        return moved ? moved.fieldInfo : f;
+      });
+      for (const u of updates) {
+        const overlapMsg = formatOverlapWarning(u.fieldInfo, peers);
+        if (overlapMsg) {
+          showDesignError(overlapMsg);
+          break;
+        }
+      }
+    }
 
     scheduleNudgeUpdate(lastSelectedFormat, updates);
   });

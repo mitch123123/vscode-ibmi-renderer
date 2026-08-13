@@ -22,9 +22,9 @@ contributors can extend it without breaking round-trip DDS editing.
 
 ```
 src/
-  extension.ts              Activation, command registration, tab exclusivity
-  editorSwitch.ts           Open Design / Source view for the same DDS URI
-  editPreviewCodeLens.ts    Legacy CodeLens entry point at top of DDS
+  extension.ts              Activation, command registration
+  editorSwitch.ts           Open designer and/or text editor for the same DDS URI
+  editPreviewCodeLens.ts    CodeLens entry points on DDS text
   ibmiLifecycle.ts          React to Code-for-IBMi connect / disconnect
   protectedSource.ts        Read-only guard for DDS from certain sources
   uri.ts                    URI / browser-node helpers
@@ -40,7 +40,7 @@ src/
 webui/
   index.html                Webview host document
   main.js                   Bundled webview entry (esbuild output)
-  src/                      Webview modules (renderer, sidebar, palette, keyword editor…)
+  src/                      Webview modules (renderer, sidebar, …)
   scripts/                  Copied vendor assets (Konva, VS Code elements, codicons)
 ```
 
@@ -141,16 +141,39 @@ After a successful `applyEdit`, the session:
 Defined in `src/shared/messages.ts`.
 
 - **Host → Webview** (`HostToWebviewMessage`): `load`, `update`,
-  `connectionStatus`, `databaseFields`.
-- **Webview → Host** (`WebviewToHostMessage`): `showSource`,
-  `deleteField[s]`, `newField`, `updateField[s]`, `updateFormat`,
+  `connectionStatus`, `databaseFields`, `editFailed`, `showError`,
+  `requestInputResult`, `requestConfirmResult`, `selectFormat`,
+  `flushPendingEdits`.
+- **Webview → Host** (`WebviewToHostMessage`):
+  `deleteField[s]`, `newField[s]`, `updateField[s]`, `updateFormat`,
   `newFormats`, `deleteFormat`, `renameFormat`, `copyFormat`,
-  `browseDatabaseFields`, `placeDatabaseFields`.
+  `browseDatabaseFields`, `placeDatabaseFields`, `requestInput`,
+  `requestConfirm`, `showError`.
+
+The designer custom editor and the default DDS text editor may stay open at
+the same time for one URI. Both bind to the same `TextDocument`: designer edits
+apply `WorkspaceEdit`s (text updates live), and external text changes reload
+the designer via `onDidChangeTextDocument` (debounced while typing).
 
 The host processes webview messages through a FIFO queue
 (`DspfDesignerSession.drainQueue`) — one edit at a time, awaiting each
 `applyEdit` — so we never interleave two `WorkspaceEdit`s against the same
 document.
+
+### Trust boundary
+
+The webview is an untrusted scripted context. Mitigations:
+
+- HTML is served with a **Content Security Policy** (nonce-backed `script-src`,
+  `default-src 'none'`) from `DspfDesignerProvider.getBaseHtml`.
+- `enableCommandUris` is **false**; `localResourceRoots` is limited to `webui/`.
+- Document-mutating payloads are validated in `src/shared/editValidation.ts`
+  before a `WorkspaceEdit` is built (field names/lengths/positions, keywords,
+  const values, format keywords such as `SFLPAG` / `WINDOW`).
+- Dialog proxies (`showError`, `requestInput`, `requestConfirm`) sanitize and
+  length-clamp strings so a compromised webview cannot freely spoof VS Code UI.
+- The extension declares `untrustedWorkspaces.supported: false` — the designer
+  requires a trusted workspace.
 
 ## Round-trip and passthrough
 

@@ -15,17 +15,35 @@ import {
   workspace,
 } from "vscode";
 import { openDdsView } from "../editorSwitch";
+import { confirmSaveOnDesignerClose, DESIGNER_CLOSE_FLUSH_MS } from "../unsavedChanges";
 import { isProtectedDdsSource, protectedSourceMessage } from "../protectedSource";
 import { DisplayFile, FieldInfo, splitDocumentLines } from "./dspf";
 import { browseDatabaseFieldsInteractive, DbFieldDef, fetchFileFieldsByName } from "../dbBrowse";
 import { VIEW_TYPE, WebviewToHostMessage } from "../shared/messages";
 import { isValidRecordName, RECORD_NAME_HINT } from "../shared/recordName";
-import { validateFieldEditPayload, validateFormatKeywords } from "../shared/editValidation";
+import { validateFieldEditPayload, validateFormatKeywords, sanitizeDialogString } from "../shared/editValidation";
 import type { DdsUpdate } from "../shared/dspf-types";
 
 export { VIEW_TYPE };
 
 const REMOTE_SCHEMES = new Set([`member`, `streamfile`, `object`]);
+
+/**
+ * Tab label for the designer custom editor.
+ * VS Code 1.106+ honors `WebviewPanel.title` on custom editors; older builds keep the filename.
+ */
+export function designerTabTitle(resourcePath: string): string {
+  const name = resourcePath.replace(/\\/g, `/`).split(`/`).filter(Boolean).pop() || `DDS`;
+  return `${name} [Designer]`;
+}
+
+function applyDesignerTabIdentity(webviewPanel: WebviewPanel, document: TextDocument, extensionUri: Uri): void {
+  webviewPanel.title = designerTabTitle(document.uri.path);
+  webviewPanel.iconPath = {
+    light: Uri.joinPath(extensionUri, `media`, `designer-tab-light.svg`),
+    dark: Uri.joinPath(extensionUri, `media`, `designer-tab-dark.svg`),
+  };
+}
 
 /**
  * Parse a DDS file spec (as it appears inside `REF(...)` or as the second
@@ -108,6 +126,8 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
 
   private static readonly sessions = new Set<DspfDesignerSession>();
   private static remoteSessionsReadonly = false;
+  /** Format to select when a designer session is next created for a URI. */
+  private static readonly pendingSelectFormatByUri = new Map<string, string>();
 
   constructor(private readonly context: ExtensionContext) {}
 
@@ -126,6 +146,46 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
     }
   }
 
+  /**
+   * Remember which record format to activate when the designer opens for `uri`.
+   * Used when opening the designer from CodeLens Edit.
+   */
+  public static setPendingSelectFormat(uri: Uri, formatName: string): void {
+    const name = (formatName || ``).trim();
+    if (!name) {
+      return;
+    }
+    DspfDesignerProvider.pendingSelectFormatByUri.set(uri.toString(), name);
+  }
+
+  /**
+   * Select a record format in a live designer session.
+   * Returns true when a session handled the request.
+   */
+  public static requestSelectFormat(uri: Uri, formatName: string): boolean {
+    const name = (formatName || ``).trim();
+    if (!name) {
+      return false;
+    }
+    for (const session of DspfDesignerProvider.sessions) {
+      if (session.documentUri.toString() === uri.toString()) {
+        DspfDesignerProvider.pendingSelectFormatByUri.delete(uri.toString());
+        session.selectFormat(name);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static takePendingSelectFormat(uri: Uri): string | undefined {
+    const key = uri.toString();
+    const name = DspfDesignerProvider.pendingSelectFormatByUri.get(key);
+    if (name) {
+      DspfDesignerProvider.pendingSelectFormatByUri.delete(key);
+    }
+    return name;
+  }
+
   async resolveCustomTextEditor(
     document: TextDocument,
     webviewPanel: WebviewPanel,
@@ -142,13 +202,13 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
       return;
     }
 
+    applyDesignerTabIdentity(webviewPanel, document, this.context.extensionUri);
+
     webviewPanel.webview.options = {
       enableScripts: true,
-      enableCommandUris: true,
+      enableCommandUris: false,
       localResourceRoots: [
-        this.context.extensionUri,
         Uri.joinPath(this.context.extensionUri, "webui"),
-        Uri.joinPath(this.context.extensionUri, "webui", "scripts"),
       ],
     };
 
@@ -156,22 +216,54 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
 
     const editor = new DspfDesignerSession(this.context, document, webviewPanel);
     DspfDesignerProvider.sessions.add(editor);
+    const pendingSelect = DspfDesignerProvider.takePendingSelectFormat(document.uri);
+    if (pendingSelect) {
+      editor.setPendingSelectFormat(pendingSelect);
+    }
     editor.load(true);
     editor.applyConnectionReadonly(DspfDesignerProvider.remoteSessionsReadonly);
+
+    /** Coalesce rapid text-editor keystrokes into one designer reload. */
+    let externalReloadTimer: ReturnType<typeof setTimeout> | undefined;
+    const EXTERNAL_RELOAD_MS = 150;
 
     const changeDocSub = workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
         if (editor.consumeIgnoredDocumentChange()) {
           return;
         }
-        editor.load(true);
+        if (externalReloadTimer) {
+          clearTimeout(externalReloadTimer);
+        }
+        externalReloadTimer = setTimeout(() => {
+          externalReloadTimer = undefined;
+          editor.load(true);
+        }, EXTERNAL_RELOAD_MS);
+      }
+    });
+
+    const viewStateSub = webviewPanel.onDidChangeViewState((e) => {
+      if (!e.webviewPanel.visible) {
+        editor.requestFlushPendingEdits();
       }
     });
 
     webviewPanel.onDidDispose(() => {
+      if (externalReloadTimer) {
+        clearTimeout(externalReloadTimer);
+        externalReloadTimer = undefined;
+      }
+      const snapshot = { uri: editor.documentUri, document: editor.textDocument };
       changeDocSub.dispose();
+      viewStateSub.dispose();
       DspfDesignerProvider.sessions.delete(editor);
-      editor.dispose();
+      void (async () => {
+        editor.requestFlushPendingEdits();
+        await delay(DESIGNER_CLOSE_FLUSH_MS);
+        await editor.waitUntilIdle();
+        editor.dispose();
+        await confirmSaveOnDesignerClose(snapshot);
+      })();
     });
   }
 
@@ -179,26 +271,50 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
     const basePath = Uri.joinPath(this.context.extensionUri, "webui", "index.html");
     let content = readFileSync(basePath.fsPath, "utf-8");
 
-    const fileVariables: Record<string, Uri> = {
-      "{main}": webview.asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "main.js")),
-      "{elements}": webview.asWebviewUri(
-        Uri.joinPath(this.context.extensionUri, "webui", "scripts", "vscode-elements.js")
-      ),
-      "{styles}": webview.asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "styles.css")),
-      "{codicon}": webview.asWebviewUri(
-        Uri.joinPath(this.context.extensionUri, "webui", "scripts", "codicon.css")
-      ),
-      "{konva}": webview.asWebviewUri(
-        Uri.joinPath(this.context.extensionUri, "webui", "scripts", "konva.min.js")
-      ),
+    const nonce = getWebviewNonce();
+    const csp = [
+      `default-src 'none'`,
+      `script-src 'nonce-${nonce}' ${webview.cspSource}`,
+      `style-src ${webview.cspSource} 'unsafe-inline'`,
+      `font-src ${webview.cspSource}`,
+      `img-src ${webview.cspSource} data:`,
+    ].join(`; `);
+
+    const replacements: Record<string, string> = {
+      "{csp}": csp,
+      "{nonce}": nonce,
+      "{main}": webview.asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "main.js")).toString(),
+      "{elements}": webview
+        .asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "scripts", "vscode-elements.js"))
+        .toString(),
+      "{styles}": webview.asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "styles.css")).toString(),
+      "{codicon}": webview
+        .asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "scripts", "codicon.css"))
+        .toString(),
+      "{konva}": webview
+        .asWebviewUri(Uri.joinPath(this.context.extensionUri, "webui", "scripts", "konva.min.js"))
+        .toString(),
     };
 
-    for (const [key, value] of Object.entries(fileVariables)) {
-      content = content.replace(new RegExp(key, "g"), value.toString());
+    for (const [key, value] of Object.entries(replacements)) {
+      content = content.replace(new RegExp(key.replace(/[{}]/g, `\\$&`), "g"), value);
     }
 
     return content;
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getWebviewNonce(): string {
+  const chars = `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789`;
+  let nonce = ``;
+  for (let i = 0; i < 32; i++) {
+    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return nonce;
 }
 
 class DspfDesignerSession {
@@ -219,6 +335,8 @@ class DspfDesignerSession {
   private refFileCache = new Map<string, Map<string, DbFieldDef> | null>();
   private refResolveGeneration = 0;
   private disposed = false;
+  /** Consumed by the next `load` so CodeLens Edit can open on a specific format. */
+  private pendingSelectFormat: string | undefined;
 
   /** @deprecated use consumeIgnoredDocumentChange — kept for provider compatibility */
   public get isApplyingEdit(): boolean {
@@ -234,6 +352,49 @@ class DspfDesignerSession {
       this.messageQueue.push(msg);
       void this.drainQueue();
     });
+  }
+
+  get documentUri(): Uri {
+    return this.document.uri;
+  }
+
+  get textDocument(): TextDocument {
+    return this.document;
+  }
+
+  /** Ask the webview to immediately send any debounced nudge edits. */
+  requestFlushPendingEdits() {
+    this.panel.webview.postMessage({ command: `flushPendingEdits` });
+  }
+
+  /** Wait until the in-flight webview message queue has drained. */
+  async waitUntilIdle(): Promise<void> {
+    const deadline = Date.now() + 2000;
+    while (this.processingQueue || this.messageQueue.length > 0) {
+      if (Date.now() >= deadline) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  /** Queue a format selection for the next `load`, and/or notify a live webview. */
+  setPendingSelectFormat(formatName: string) {
+    const name = (formatName || ``).trim();
+    if (!name) {
+      return;
+    }
+    this.pendingSelectFormat = name;
+  }
+
+  /** Switch the webview to Design mode and activate the named record format. */
+  selectFormat(formatName: string) {
+    const name = (formatName || ``).trim();
+    if (!name) {
+      return;
+    }
+    this.pendingSelectFormat = name;
+    this.panel.webview.postMessage({ command: `selectFormat`, recordFormat: name });
   }
 
   dispose() {
@@ -332,10 +493,14 @@ class DspfDesignerSession {
     this.dds = new DisplayFile();
     this.dds.parse(splitDocumentLines(content));
 
+    const selectFormat = this.pendingSelectFormat;
+    this.pendingSelectFormat = undefined;
+
     this.panel.webview.postMessage({
       command: rerender ? "load" : "update",
       dds: this.dds,
       documentType: this.documentType,
+      ...(selectFormat ? { selectFormat } : {}),
     });
     void this.resolveReferenceFieldLengths();
   }
@@ -534,10 +699,12 @@ class DspfDesignerSession {
   }
 
   private async handleRequestInput(message: Extract<WebviewToHostMessage, { command: "requestInput" }>) {
+    const title = sanitizeDialogString(message.title) || `IBM i Display File Designer`;
+    const prompt = sanitizeDialogString(message.prompt) || undefined;
     const value = await window.showInputBox({
-      title: message.title,
-      prompt: message.prompt,
-      value: message.value,
+      title,
+      prompt,
+      value: sanitizeDialogString(message.value, 32) || undefined,
       validateInput: message.validate === `recordName`
         ? (v) => {
             const name = (v || ``).trim().toUpperCase();
@@ -559,9 +726,10 @@ class DspfDesignerSession {
   }
 
   private async handleRequestConfirm(message: Extract<WebviewToHostMessage, { command: "requestConfirm" }>) {
-    const label = message.confirmLabel || `Delete`;
+    const body = sanitizeDialogString(message.message) || `Are you sure?`;
+    const label = sanitizeDialogString(message.confirmLabel, 40) || `Delete`;
     const choice = await window.showWarningMessage(
-      message.message,
+      body,
       { modal: true },
       label
     );
@@ -574,12 +742,7 @@ class DspfDesignerSession {
 
   /** Exposed for unit tests. */
   async handleMessage(message: WebviewToHostMessage) {
-    if (message.command === `showSource`) {
-      await openDdsView(this.document.uri, `source`);
-      return;
-    }
-
-    // Host-native dialogs are always allowed (they do not mutate the document).
+    // Host-native dialogs / navigation are always allowed (they do not mutate the document).
     if (message.command === `requestInput`) {
       await this.handleRequestInput(message);
       return;
@@ -589,7 +752,23 @@ class DspfDesignerSession {
       return;
     }
     if (message.command === `showError`) {
-      void window.showErrorMessage(message.message);
+      const text = sanitizeDialogString(message.message);
+      if (text) {
+        void window.showErrorMessage(text);
+      }
+      return;
+    }
+    if (message.command === `revealInSource`) {
+      const { startLine, endLine } = message;
+      if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
+        return;
+      }
+      if (startLine < 0 || endLine < startLine) {
+        return;
+      }
+      await openDdsView(this.document.uri, `source`, {
+        revealLines: { startLine, endLine },
+      });
       return;
     }
 
@@ -907,6 +1086,13 @@ class DspfDesignerSession {
         const format = this.dds.findFormat(message.recordFormat);
         if (!format || !message.fields?.length) {
           break;
+        }
+        for (const f of message.fields) {
+          const fieldError = validateFieldEditPayload(f);
+          if (fieldError) {
+            this.reportEditFailure(fieldError);
+            return;
+          }
         }
         const newLines: string[] = [];
         for (const f of message.fields) {

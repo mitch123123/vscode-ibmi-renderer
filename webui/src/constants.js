@@ -15,6 +15,8 @@ export const colours = {
 
 export const SELECTED_COLOUR = `#383838`;
 export const PROTECT_COLOUR = `#666666`;
+/** Background tint for fields that share display cells with another field. */
+export const OVERLAP_COLOUR = `#5a2020`;
 
 export const dateFormats = {
   '*MDY': `mm/dd/yyyy`,
