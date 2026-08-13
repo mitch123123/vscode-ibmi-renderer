@@ -188,8 +188,11 @@
     "lint": "eslint src",
     "test": "vitest run"
   },
+  "overrides": {
+    "@types/node": "$@types/node"
+  },
   "devDependencies": {
-    "@types/node": "20.x",
+    "@types/node": "^20.19.0",
     "@types/vscode": "^1.97.0",
     "@typescript-eslint/eslint-plugin": "^8.22.0",
     "@typescript-eslint/parser": "^8.22.0",
