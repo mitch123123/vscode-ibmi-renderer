@@ -133,7 +133,7 @@ function warnIfLegacyRendererPresent(context: vscode.ExtensionContext) {
 	}
 	void context.globalState.update(key, true);
 	void vscode.window.showInformationMessage(
-		`Fiedler DDS Designer is installed alongside ${siblings.join(' and ')}. Use Open With or the Fiedler Edit / Preview actions to choose this editor — command ids and the designer view type are namespaced so both can stay enabled.`,
+		`IBM i DDS Designer is installed alongside ${siblings.join(' and ')}. Use Open With or the IBM i DDS Edit / Preview actions to choose this editor — command ids and the designer view type are namespaced so both can stay enabled.`,
 		'Got it'
 	);
 }

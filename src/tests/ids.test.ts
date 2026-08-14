@@ -7,7 +7,7 @@ describe(`extension identity`, () => {
     expect(VIEW_TYPE).not.toBe(UPSTREAM_VIEW_TYPE);
   });
 
-  it(`namespaces commands under the Fiedler publisher`, () => {
+  it(`namespaces commands under this fork's publisher`, () => {
     for (const id of Object.values(COMMANDS)) {
       expect(id.startsWith(`mitchfiedler.ddsDesigner.`)).toBe(true);
     }

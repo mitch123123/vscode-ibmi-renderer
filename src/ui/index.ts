@@ -34,7 +34,7 @@ const REMOTE_SCHEMES = new Set([`member`, `streamfile`, `object`]);
  */
 export function designerTabTitle(resourcePath: string): string {
   const name = resourcePath.replace(/\\/g, `/`).split(`/`).filter(Boolean).pop() || `DDS`;
-  return `${name} [Fiedler]`;
+  return `${name} [IBM i DDS]`;
 }
 
 function applyDesignerTabIdentity(webviewPanel: WebviewPanel, document: TextDocument, extensionUri: Uri): void {
@@ -699,7 +699,7 @@ class DspfDesignerSession {
   }
 
   private async handleRequestInput(message: Extract<WebviewToHostMessage, { command: "requestInput" }>) {
-    const title = sanitizeDialogString(message.title) || `Fiedler DDS Designer`;
+    const title = sanitizeDialogString(message.title) || `IBM i DDS Designer`;
     const prompt = sanitizeDialogString(message.prompt) || undefined;
     const value = await window.showInputBox({
       title,

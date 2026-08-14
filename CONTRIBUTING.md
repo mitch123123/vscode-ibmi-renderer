@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to Fiedler DDS Designer.
+Thanks for contributing to IBM i DDS Designer.
 
 This repository is a fork of
 [codefori/vscode-ibmi-renderer](https://github.com/codefori/vscode-ibmi-renderer),

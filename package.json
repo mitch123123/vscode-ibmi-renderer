@@ -1,6 +1,6 @@
 {
   "name": "dds-designer",
-  "displayName": "Fiedler DDS Designer",
+  "displayName": "IBM i DDS Designer",
   "description": "Visual designer for IBM i display and printer files (DDS). Fork of the Code for IBM i designer.",
   "version": "0.2.1",
   "publisher": "mitchfiedler",
@@ -47,7 +47,7 @@
     "customEditors": [
       {
         "viewType": "mitchfiedler.dspfDesigner",
-        "displayName": "Fiedler DDS Designer",
+        "displayName": "IBM i DDS Designer",
         "selector": [
           {
             "filenamePattern": "*.dspf"
@@ -80,26 +80,26 @@
     "commands": [
       {
         "command": "mitchfiedler.ddsDesigner.launchRenderer",
-        "title": "Edit / Preview (Fiedler)",
-        "category": "Fiedler DDS",
+        "title": "Edit / Preview (IBM i DDS)",
+        "category": "IBM i DDS",
         "icon": "$(edit)"
       },
       {
         "command": "mitchfiedler.ddsDesigner.editRecordFormat",
-        "title": "Edit Record Format (Fiedler)",
-        "category": "Fiedler DDS",
+        "title": "Edit Record Format (IBM i DDS)",
+        "category": "IBM i DDS",
         "icon": "$(edit)"
       },
       {
         "command": "mitchfiedler.ddsDesigner.showSource",
         "title": "Open DDS Source Beside",
-        "category": "Fiedler DDS",
+        "category": "IBM i DDS",
         "icon": "$(file-code)"
       },
       {
         "command": "mitchfiedler.ddsDesigner.toggleEditorView",
         "title": "Focus Other DDS Editor",
-        "category": "Fiedler DDS",
+        "category": "IBM i DDS",
         "icon": "$(arrow-swap)"
       }
     ],

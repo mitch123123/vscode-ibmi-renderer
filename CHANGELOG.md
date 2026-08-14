@@ -1,6 +1,6 @@
 # Change Log
 
-All notable changes to the **Fiedler DDS Designer** extension are
+All notable changes to the **IBM i DDS Designer** extension are
 documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -8,7 +8,7 @@ documented here. The format loosely follows
 
 ### Changed
 
-- Published as **Fiedler DDS Designer** (`mitchfiedler.dds-designer`). Command
+- Published as **IBM i DDS Designer** (`mitchfiedler.dds-designer`). Command
   ids, custom editor view type (`mitchfiedler.dspfDesigner`), CodeLens titles,
   tab suffix, and webview layout storage are namespaced so this fork can be
   installed next to `halcyontechltd.vscode-ibmi-renderer` and the older IBM i
@@ -17,7 +17,7 @@ documented here. The format loosely follows
 
 ### Added
 
-- Designer tabs show `[Designer]` in the title and a distinct layout icon so
+- Designer tabs show `[IBM i DDS]` in the title and a distinct layout icon so
   they can be told apart from the DDS source editor (VS Code 1.106+).
 - Sidebar field Properties: live GUI limits while editing (Name max 10 / no
   spaces, Length/Decimals digit caps, indicator `Nxx` shape, const Value /
