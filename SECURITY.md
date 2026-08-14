@@ -11,11 +11,13 @@ Please **do not** open a public GitHub issue for security reports.
 
 Prefer one of:
 
-1. **[GitHub Security Advisories](https://github.com/codefori/vscode-ibmi-renderer/security/advisories/new)**
-   for this repository (private disclosure).
-2. Contact the Code for IBM i / Halcyon maintainers through the
-   [codefori](https://github.com/codefori) organization if advisories are
-   unavailable.
+1. **[GitHub Security Advisories](https://github.com/mitch123123/vscode-ibmi-renderer/security/advisories/new)**
+   for this fork (private disclosure).
+2. Contact this repository's maintainers if advisories are unavailable.
+
+This fork is based on [codefori/vscode-ibmi-renderer](https://github.com/codefori/vscode-ibmi-renderer).
+Issues that also affect the original project can be reported upstream to the
+[Code for IBM i](https://github.com/codefori) team as well.
 
 Include:
 

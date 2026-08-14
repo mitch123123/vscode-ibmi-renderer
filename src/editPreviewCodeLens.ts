@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { COMMANDS } from "./shared/messages";
 import { DisplayFile, splitDocumentLines } from "./ui/dspf";
 import { uriLooksLikeDesignerSource } from "./uri";
 
@@ -6,8 +7,8 @@ const GLOBAL_RECORD_NAME = `_GLOBAL`;
 
 /**
  * CodeLens on DDS source:
- * - top-of-file "Edit / Preview" (opens the designer)
- * - per–record-format "Edit" (opens the designer on that format)
+ * - top-of-file "IBM i DDS Designer" (opens this fork's designer)
+ * - per–record-format "Edit (IBM i DDS)"
  */
 export class DdsEditPreviewCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
@@ -28,9 +29,9 @@ export class DdsEditPreviewCodeLensProvider implements vscode.CodeLensProvider {
 
     const lenses: vscode.CodeLens[] = [
       new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
-        title: `$(edit) Edit / Preview`,
-        tooltip: `Open the visual Display File Designer for this DDS source`,
-        command: `vscode-ibmi-renderer.launchRenderer`,
+        title: `$(edit) IBM i DDS Designer`,
+        tooltip: `Open IBM i DDS Designer for this DDS source`,
+        command: COMMANDS.launchRenderer,
         arguments: [document.uri],
       }),
     ];
@@ -48,9 +49,9 @@ export class DdsEditPreviewCodeLensProvider implements vscode.CodeLensProvider {
         }
         lenses.push(
           new vscode.CodeLens(new vscode.Range(line, 0, line, 0), {
-            title: `$(edit) Edit`,
-            tooltip: `Open record format ${format.name} in the Display File Designer`,
-            command: `vscode-ibmi-renderer.editRecordFormat`,
+            title: `$(edit) Edit (IBM i DDS)`,
+            tooltip: `Open record format ${format.name} in IBM i DDS Designer`,
+            command: COMMANDS.editRecordFormat,
             arguments: [document.uri, format.name],
           })
         );

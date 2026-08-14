@@ -4763,7 +4763,7 @@
 
   // webui/src/main.js
   setIndicatorChangeHandler(() => refreshCanvas());
-  var LAYOUT_STORAGE_KEY = `ibmi.dspfDesigner.layout`;
+  var LAYOUT_STORAGE_KEY = `mitchfiedler.dspfDesigner.layout`;
   var MIN_SIDE_WIDTH = 180;
   var MAX_SIDE_WIDTH = 480;
   var MIN_BOTTOM_HEIGHT = 120;

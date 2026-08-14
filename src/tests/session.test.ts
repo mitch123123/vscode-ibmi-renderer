@@ -301,12 +301,12 @@ describe(`DspfDesignerSession`, () => {
     expect(vscodeMocks.showErrorMessage).toHaveBeenCalledWith(`boom`);
   });
 
-  it(`labels designer tabs with a Designer suffix`, () => {
+  it(`labels designer tabs with an IBM i DDS suffix`, () => {
     expect(designerTabTitle(`/QSYS.LIB/TOLENTDS.LIB/QDDSSRC.FILE/SAMPLEDSP.DSPF`)).toBe(
-      `SAMPLEDSP.DSPF [Designer]`
+      `SAMPLEDSP.DSPF [IBM i DDS]`
     );
-    expect(designerTabTitle(`C:\\\\work\\\\orders.prtf`)).toBe(`orders.prtf [Designer]`);
-    expect(designerTabTitle(``)).toBe(`DDS [Designer]`);
+    expect(designerTabTitle(`C:\\\\work\\\\orders.prtf`)).toBe(`orders.prtf [IBM i DDS]`);
+    expect(designerTabTitle(``)).toBe(`DDS [IBM i DDS]`);
   });
 
   it(`revealInSource opens the text editor on the requested lines`, async () => {

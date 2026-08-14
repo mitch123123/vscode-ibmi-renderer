@@ -24,7 +24,7 @@ jobs:
       - name: Upload VSIX to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: vscode-ibmi-renderer.vsix
+          files: dds-designer.vsix
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +36,7 @@ jobs:
             echo "VSCE_PAT not configured; skipping VS Marketplace publish."
             exit 0
           fi
-          npx --yes @vscode/vsce publish --packagePath vscode-ibmi-renderer.vsix
+          npx --yes @vscode/vsce publish --packagePath dds-designer.vsix
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -45,4 +45,4 @@ jobs:
             echo "OVSX_PAT not configured; skipping Open VSX publish."
             exit 0
           fi
-          npx --yes ovsx publish vscode-ibmi-renderer.vsix -p "$OVSX_PAT"
+          npx --yes ovsx publish dds-designer.vsix -p "$OVSX_PAT"
