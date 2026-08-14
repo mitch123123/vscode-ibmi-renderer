@@ -59,28 +59,36 @@ Use the PR template. Before requesting review:
 
 ## Release runbook (maintainers)
 
-1. Ensure `main` is green (CI: typecheck, lint, tests, bundle freshness, audit).
-2. Bump `"version"` in [`package.json`](package.json).
-3. Move **Unreleased** notes in [`CHANGELOG.md`](CHANGELOG.md) into a dated
+Merging to `main` publishes automatically **after CI is green**, when
+`"version"` in [`package.json`](package.json) is new (no existing `vX.Y.Z` tag).
+
+1. In the PR, bump `"version"` in [`package.json`](package.json) (and
+   `package-lock.json` if it records the version).
+2. Move **Unreleased** notes in [`CHANGELOG.md`](CHANGELOG.md) into a dated
    `[x.y.z]` section.
-4. Commit, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-5. The [Release workflow](.github/workflows/release.yaml) will:
+3. Merge the PR. CI on `main` runs; if it passes, [Release](.github/workflows/release.yaml)
+   will:
    - Build `dds-designer.vsix`
-   - Attach it to a GitHub Release
-   - Publish to the VS Code Marketplace (`VSCE_PAT` secret)
-   - Publish to Open VSX (`OVSX_PAT` secret)
+   - Create GitHub Release `vX.Y.Z`
+   - Publish to the VS Code Marketplace (`VSCE_PAT` secret — required)
+   - Publish to Open VSX (`OVSX_PAT` secret — optional, for Cursor)
+
+A merge that does **not** bump the version skips the release (same tag already
+exists). Use **Actions → Release → Run workflow** to retry a failed publish
+without merging again.
+
+Do not auto-bump from Actions: `main` is protected and requires a pull request.
 
 ### Required repository secrets
 
 | Secret | Purpose |
 |--------|---------|
-| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `mitchfiedler` |
-| `OVSX_PAT` | Open VSX personal access token for the same publisher identity |
+| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `mitchfiedler`. Create at https://dev.azure.com/_usersSettings/tokens (Organization: **All accessible organizations**). Add it under **Settings → Secrets and variables → Actions**. |
+| `OVSX_PAT` | Open VSX personal access token for publisher `mitchfiedler` (Cursor / VSCodium). Optional; the job skips Open VSX if unset. |
 
-Without these secrets, the GitHub Release still uploads the VSIX and the
-Marketplace / Open VSX steps print a skip message (they do not fail the job).
-Configure both secrets before tagging a release you want published to the
-stores.
+Without `VSCE_PAT`, a new-version merge will fail at the Marketplace step so
+the missing secret is obvious. GitHub Release is created first, so you can
+still grab the VSIX from the Releases page.
 
 ## Code of conduct
 

@@ -8,6 +8,8 @@ documented here. The format loosely follows
 
 ### Changed
 
+- Merging to `main` publishes to the VS Code Marketplace after CI is green, when
+  `package.json` version has no matching `v*` git tag (`VSCE_PAT` required).
 - Published as **IBM i DDS Designer** (`mitchfiedler.dds-designer`). Command
   ids, custom editor view type (`mitchfiedler.dspfDesigner`), CodeLens titles,
   tab suffix, and webview layout storage are namespaced so this fork can be
