@@ -74,7 +74,7 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           if [ -z "$VSCE_PAT" ]; then
-            echo "::error::Add repository secret VSCE_PAT (Azure DevOps PAT with Marketplace → Manage for publisher mitchfiedler)."
+            echo "::error::Add repository secret VSCE_PAT (Azure DevOps PAT with Marketplace → Manage for publisher mitchellfiedler)."
             exit 1
           fi
           npx --yes @vscode/vsce publish --packagePath dds-designer.vsix

@@ -20,7 +20,7 @@ import { isProtectedDdsSource, protectedSourceMessage } from "../protectedSource
 import { DisplayFile, FieldInfo, splitDocumentLines } from "./dspf";
 import { browseDatabaseFieldsInteractive, DbFieldDef, fetchFileFieldsByName } from "../dbBrowse";
 import { VIEW_TYPE, WebviewToHostMessage } from "../shared/messages";
-import { isValidRecordName, RECORD_NAME_HINT } from "../shared/recordName";
+import { isValidRecordName, RECORD_NAME_HINT, uniquifyNewFieldNames } from "../shared/recordName";
 import { validateFieldEditPayload, validateFormatKeywords, sanitizeDialogString } from "../shared/editValidation";
 import type { DdsUpdate } from "../shared/dspf-types";
 
@@ -452,6 +452,26 @@ class DspfDesignerSession {
     return new Range(start, 0, endExclusive, 0);
   }
 
+  /** Field names already present on a record format (including TEXT* constants). */
+  private existingFieldNames(recordFormat: string): string[] {
+    const format = this.dds?.findFormat(recordFormat);
+    if (!format) {
+      return [];
+    }
+    return format.fields.map((f) => f.name).filter((n): n is string => !!n);
+  }
+
+  /**
+   * Auto-increment colliding names on incoming fields so a new FIELD1 / REFFLD
+   * never overwrites an existing field's DDS source (lookups are by name).
+   */
+  private uniquifyIncomingFields(
+    recordFormat: string,
+    fields: Array<{ name?: string; displayType?: string }>,
+  ): void {
+    uniquifyNewFieldNames(fields, this.existingFieldNames(recordFormat));
+  }
+
   /**
    * Insert DDS lines at a 0-based line index. When the index is past EOF
    * (common when the file has no trailing newline), append after the last
@@ -740,6 +760,24 @@ class DspfDesignerSession {
     });
   }
 
+  private async handleRequestSaveDiscard(message: Extract<WebviewToHostMessage, { command: "requestSaveDiscard" }>) {
+    const body = sanitizeDialogString(message.message) || `Do you want to save your changes?`;
+    const SAVE = `Save`;
+    const DONT_SAVE = `Don't Save`;
+    const picked = await window.showWarningMessage(
+      body,
+      { modal: true },
+      SAVE,
+      DONT_SAVE
+    );
+    const choice = picked === SAVE ? `save` : picked === DONT_SAVE ? `discard` : `cancel`;
+    this.panel.webview.postMessage({
+      command: `requestSaveDiscardResult`,
+      requestId: message.requestId,
+      choice,
+    });
+  }
+
   /** Exposed for unit tests. */
   async handleMessage(message: WebviewToHostMessage) {
     // Host-native dialogs / navigation are always allowed (they do not mutate the document).
@@ -749,6 +787,10 @@ class DspfDesignerSession {
     }
     if (message.command === `requestConfirm`) {
       await this.handleRequestConfirm(message);
+      return;
+    }
+    if (message.command === `requestSaveDiscard`) {
+      await this.handleRequestSaveDiscard(message);
       return;
     }
     if (message.command === `showError`) {
@@ -833,6 +875,7 @@ class DspfDesignerSession {
           this.reportEditFailure(fieldError);
           break;
         }
+        this.uniquifyIncomingFields(message.recordFormat, [fieldInfo]);
         const newField = this.dds.updateField(message.recordFormat, undefined, fieldInfo);
         if (newField?.range) {
           const workspaceEdit = new WorkspaceEdit();
@@ -858,6 +901,7 @@ class DspfDesignerSession {
             return;
           }
         }
+        this.uniquifyIncomingFields(message.recordFormat, message.fields);
         const newLines: string[] = [];
         for (const f of message.fields) {
           newLines.push(...DisplayFile.getLinesForField(FieldInfo.fromData(f)));
@@ -1094,6 +1138,7 @@ class DspfDesignerSession {
             return;
           }
         }
+        this.uniquifyIncomingFields(message.recordFormat, message.fields);
         const newLines: string[] = [];
         for (const f of message.fields) {
           newLines.push(...DisplayFile.getLinesForField(FieldInfo.fromData(f)));

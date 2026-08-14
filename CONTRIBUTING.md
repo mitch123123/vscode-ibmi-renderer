@@ -83,8 +83,8 @@ Do not auto-bump from Actions: `main` is protected and requires a pull request.
 
 | Secret | Purpose |
 |--------|---------|
-| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `mitchfiedler`. Create at https://dev.azure.com/_usersSettings/tokens (Organization: **All accessible organizations**). Add it under **Settings → Secrets and variables → Actions**. |
-| `OVSX_PAT` | Open VSX personal access token for publisher `mitchfiedler` (Cursor / VSCodium). Optional; the job skips Open VSX if unset. |
+| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `mitchellfiedler`. Create at https://dev.azure.com/_usersSettings/tokens (Organization: **All accessible organizations**). Add it under **Settings → Secrets and variables → Actions**. |
+| `OVSX_PAT` | Open VSX personal access token for publisher `mitchellfiedler` (Cursor / VSCodium). Optional; the job skips Open VSX if unset. |
 
 Without `VSCE_PAT`, a new-version merge will fail at the Marketplace step so
 the missing secret is obvious. GitHub Release is created first, so you can

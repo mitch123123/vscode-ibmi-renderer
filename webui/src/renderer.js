@@ -18,6 +18,13 @@ import { clearKeywordEditor, renderSections } from "./keywordEditor.js";
 import { updateRecordFormatSidebar, updateSelectedFieldSidebar, showFieldPalette } from "./sidebar.js";
 import { getDraggingField, clearDraggingField, isValidRecordName } from "./palette.js";
 import { requestHostInput, requestHostConfirm, showHostError } from "./hostDialogs.js";
+import {
+  clearFieldEditController,
+  confirmLeaveFieldEdits,
+  dirtyFieldName,
+  flushDirtyFieldEdits,
+  hasDirtyFieldEdits,
+} from "./fieldEditGuard.js";
 import { vscode } from "./vscodeApi.js";
 import { announce } from "./a11y.js";
 import {
@@ -27,6 +34,7 @@ import {
   isSameFieldRef,
   maxStartColumnForLength,
 } from "./coords.js";
+import { uniqueFieldName, uniquifyNewFieldNames } from "../../src/shared/recordName.ts";
 
 /** @type {ReturnType<typeof setTimeout>|undefined} */
 let designErrorTimer = undefined;
@@ -169,7 +177,13 @@ function editsAllowed() {
   return editorMode === `design` && connectionConnected;
 }
 
-export function setEditorMode(mode) {
+export async function setEditorMode(mode) {
+  if (mode === editorMode) {
+    return;
+  }
+  if (!(await confirmLeaveFieldEdits())) {
+    return;
+  }
   editorMode = mode;
   const badge = document.getElementById(`modeBadge`);
   if (badge) {
@@ -188,7 +202,7 @@ export function setEditorMode(mode) {
  * Switch to Design mode and activate a record-format tab (CodeLens Edit).
  * @param {string} formatName
  */
-export function selectRecordFormat(formatName) {
+export async function selectRecordFormat(formatName) {
   const name = (formatName || ``).trim();
   if (!name || !activeDocument) {
     return;
@@ -197,6 +211,10 @@ export function selectRecordFormat(formatName) {
     (f) => f.name === name && f.name !== GLOBAL_RECORD_FORMAT
   );
   if (!exists) {
+    return;
+  }
+
+  if (name !== lastSelectedFormat && !(await confirmLeaveFieldEdits())) {
     return;
   }
 
@@ -386,8 +404,7 @@ export function setWindowForFormat(chosenFormat) {
       return;
     }
     if (!e.evt.shiftKey) {
-      clearSelection();
-      openDesignPalette();
+      void requestClearSelection(true);
     }
   });
 
@@ -422,21 +439,26 @@ export function setWindowForFormat(chosenFormat) {
 
     suppressNextBgClick = true;
     setTimeout(() => { suppressNextBgClick = false; }, 300);
-    clearSelection(false);
-    const groups = fieldLayer.find(`Group`);
-    groups.forEach((g) => {
-      if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+    void (async () => {
+      if (!(await confirmLeaveFieldEdits())) {
         return;
       }
-      const rect = g.getClientRect();
-      if (Konva.Util.haveIntersection(box, rect)) {
-        const field = findFieldByName(g.id());
-        if (field) {
-          addToSelection(g, field, false);
+      clearSelection(false);
+      const groups = fieldLayer.find(`Group`);
+      groups.forEach((g) => {
+        if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+          return;
         }
-      }
-    });
-    updateSelectionUi();
+        const rect = g.getClientRect();
+        if (Konva.Util.haveIntersection(box, rect)) {
+          const field = findFieldByName(g.id());
+          if (field) {
+            addToSelection(g, field, false);
+          }
+        }
+      });
+      updateSelectionUi();
+    })();
   };
 
   bg.on('mousedown', (e) => {
@@ -594,14 +616,25 @@ export function setWindowForFormat(chosenFormat) {
       const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === fieldName) || [];
       const group = matches[0];
       if (field && group) {
-        setActiveField(group, field);
+        void setActiveField(group, field);
       }
     }
   );
   syncFormatTabActive(chosenFormat);
 
   clearSelection(false);
-  if (pendingSelectionNames.length > 0) {
+  if (hasDirtyFieldEdits()) {
+    pendingSelectionNames = [];
+    const name = dirtyFieldName();
+    if (name) {
+      const field = findFieldByName(name);
+      const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
+      const group = matches[0];
+      if (field && group) {
+        addToSelection(group, field, false);
+      }
+    }
+  } else if (pendingSelectionNames.length > 0) {
     const names = [...pendingSelectionNames];
     pendingSelectionNames = [];
     names.forEach(name => {
@@ -1298,9 +1331,9 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
     group.on('pointerclick', (e) => {
       e.cancelBubble = true;
       if (e.evt.shiftKey) {
-        toggleSelection(group, fieldInfo);
+        void toggleSelection(group, fieldInfo);
       } else {
-        setActiveField(group, fieldInfo);
+        void setActiveField(group, fieldInfo);
       }
     });
     group.on(`dblclick`, (e) => {
@@ -1380,6 +1413,16 @@ function currentFormatFields() {
 }
 
 /**
+ * Named fields already on a record format (used to auto-increment new names).
+ * @param {string} recordFormat
+ * @returns {string[]}
+ */
+function existingFieldNames(recordFormat) {
+  const format = activeDocument?.formats.find((f) => f.name === recordFormat);
+  return (format?.fields || []).map((f) => f.name).filter(Boolean);
+}
+
+/**
  * @param {FieldInfo} field
  * @param {boolean} selected
  */
@@ -1407,16 +1450,39 @@ function clearSelection(updatePalette = true) {
 }
 
 /**
+ * User-initiated deselect (canvas background, Escape).
+ * @param {boolean} [updatePalette]
+ * @returns {Promise<boolean>}
+ */
+async function requestClearSelection(updatePalette = true) {
+  if (!(await confirmLeaveFieldEdits())) {
+    return false;
+  }
+  clearSelection(updatePalette);
+  return true;
+}
+
+/**
  * @param {{ silent?: boolean }} [opts]
  */
 function updateSelectionUi(opts = {}) {
+  if (
+    selectedItems.length === 1
+    && hasDirtyFieldEdits()
+    && selectedItems[0].field.name === dirtyFieldName()
+  ) {
+    return;
+  }
   if (selectedItems.length === 1) {
     const selected = selectedItems[0];
     const originalFieldName = selected.field.name;
     updateSelectedFieldSidebar(
       selected.field,
       (field) => sendFieldUpdate(lastSelectedFormat, originalFieldName, field),
-      () => sendDelete(lastSelectedFormat, originalFieldName),
+      () => {
+        clearFieldEditController();
+        sendDelete(lastSelectedFormat, originalFieldName);
+      },
       {
         generalTools: createSelectionTools(false),
         bounds: currentPositionBounds(),
@@ -1445,6 +1511,7 @@ function updateSelectionUi(opts = {}) {
  * Multi-select Fields panel: count header + collapsible Keywords tools.
  */
 function updateMultiSelectSidebar() {
+  clearFieldEditController();
   const sidebar = document.getElementById(`fieldInfoSidebar`);
   if (!sidebar) {
     return;
@@ -1680,7 +1747,10 @@ function addToSelection(group, fieldInfo, updateUi = true) {
  * @param {Group} group
  * @param {FieldInfo} fieldInfo
  */
-function toggleSelection(group, fieldInfo) {
+async function toggleSelection(group, fieldInfo) {
+  if (!(await confirmLeaveFieldEdits())) {
+    return;
+  }
   const idx = selectedItems.findIndex(s => s.field.name === fieldInfo.name);
   if (idx >= 0) {
     const bg = selectedItems[idx].group.findOne(`#bg`);
@@ -1698,7 +1768,13 @@ function toggleSelection(group, fieldInfo) {
  * @param {Group} [konvaElement]
  * @param {FieldInfo} [fieldInfo]
  */
-function setActiveField(konvaElement, fieldInfo) {
+async function setActiveField(konvaElement, fieldInfo) {
+  if (konvaElement && selectedItems.length === 1 && selectedItems[0].group === konvaElement) {
+    return;
+  }
+  if (!(await confirmLeaveFieldEdits())) {
+    return;
+  }
   clearKeywordEditor();
   clearSelection(false);
 
@@ -1776,12 +1852,16 @@ function syncFormatTabActive(formatName) {
  * Activate a record-format tab (shared by click and keyboard).
  * @param {string} formatName
  */
-function activateFormatTab(formatName) {
+async function activateFormatTab(formatName) {
   if (!formatName) {
     return;
   }
 
   if (formatName === lastSelectedFormat) {
+    return;
+  }
+
+  if (!(await confirmLeaveFieldEdits())) {
     return;
   }
 
@@ -2047,21 +2127,6 @@ function isEditingUiTarget() {
   return false;
 }
 
-function uniqueFieldName(base, existingNames) {
-  let name = base.substring(0, 10);
-  if (!existingNames.has(name)) {
-    return name;
-  }
-  for (let i = 2; i < 100; i++) {
-    const suffix = String(i);
-    name = `${base.substring(0, Math.max(1, 10 - suffix.length))}${suffix}`;
-    if (!existingNames.has(name)) {
-      return name;
-    }
-  }
-  return `F${Date.now()}`.substring(0, 10);
-}
-
 /** @type {ReturnType<typeof setTimeout>|undefined} */
 let nudgeTimer = undefined;
 /** @type {{ recordFormat: string, updates: Array<{ originalFieldName: string, fieldInfo: any }> }|undefined} */
@@ -2096,6 +2161,11 @@ export function flushPendingNudge() {
   }
 }
 
+export function flushPendingEdits() {
+  flushPendingNudge();
+  flushDirtyFieldEdits();
+}
+
 /**
  * Coalesce held-arrow nudges into one WorkspaceEdit after a short pause.
  * @param {string} recordFormat
@@ -2126,7 +2196,7 @@ export function setupKeyboard() {
       if (selectedItems.length > 0) {
         e.preventDefault();
         cancelPendingNudge();
-        clearSelection(true);
+        void requestClearSelection(true);
         document.getElementById(`container`)?.focus();
         announce(`Selection cleared`);
       }
@@ -2156,8 +2226,7 @@ export function setupKeyboard() {
             wasY0 ? 0 : field.position.y + 1,
             { ...bounds, wasY0, length: len },
           );
-          const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
-          copy.name = uniqueFieldName(`${base}_C`, existing);
+          copy.name = uniqueFieldName(copy.name || `FIELD`, existing);
           existing.add(copy.name);
           return copy;
         });
@@ -2193,6 +2262,7 @@ export function setupKeyboard() {
     if (e.key === `Delete` || e.key === `Backspace`) {
       const names = selectedItems.map(s => s.field.name).filter(Boolean);
       if (names.length === 1) {
+        clearFieldEditController();
         sendDelete(lastSelectedFormat, names[0]);
       } else if (names.length > 1) {
         void (async () => {
@@ -2201,6 +2271,7 @@ export function setupKeyboard() {
             confirmLabel: `Delete`,
           });
           if (confirmed) {
+            clearFieldEditController();
             sendDeleteFields(lastSelectedFormat, names);
           }
         })();
@@ -2225,7 +2296,7 @@ export function setupKeyboard() {
       const next = visible[idx];
       const group = fieldLayer?.findOne(`#${next.name}`);
       if (group) {
-        setActiveField(group, next);
+        void setActiveField(group, next);
       }
       return;
     }
@@ -2312,7 +2383,7 @@ function selectFirstVisibleField() {
   const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === first.name) || [];
   const group = matches[0];
   if (group) {
-    setActiveField(group, first);
+    void setActiveField(group, first);
   }
 }
 
@@ -2320,6 +2391,7 @@ function sendNewField(recordFormat, fieldInfo) {
   if (!editsAllowed()) {
     return;
   }
+  uniquifyNewFieldNames([fieldInfo], existingFieldNames(recordFormat));
   vscode.postMessage({ command: `newField`, recordFormat, fieldInfo });
 }
 
@@ -2327,8 +2399,9 @@ function sendNewFields(recordFormat, fields) {
   if (!editsAllowed() || !fields?.length) {
     return;
   }
+  uniquifyNewFieldNames(fields, existingFieldNames(recordFormat));
   if (fields.length === 1) {
-    sendNewField(recordFormat, fields[0]);
+    vscode.postMessage({ command: `newField`, recordFormat, fieldInfo: fields[0] });
     return;
   }
   vscode.postMessage({ command: `newFields`, recordFormat, fields });
@@ -2530,6 +2603,7 @@ export function handleDatabaseFieldsResult(payload) {
     const reffldSuffix = payload.library && payload.file
       ? ` ${payload.library}/${payload.file}`
       : ``;
+    const taken = new Set(existingFieldNames(lastSelectedFormat));
     for (const f of selected) {
       const usage = /** @type {any} */ (usageSelect.value) || `both`;
       if (placeSelect.value === `left` && f.heading) {
@@ -2558,8 +2632,10 @@ export function handleDatabaseFieldsResult(payload) {
         row += 1;
       }
 
+      const name = uniqueFieldName(f.name, taken);
+      taken.add(name);
       fields.push({
-        name: f.name.substring(0, 10),
+        name,
         type: `R`,
         isReference: true,
         reference: `${f.name}${reffldSuffix}`.trim(),

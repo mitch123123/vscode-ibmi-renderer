@@ -289,6 +289,91 @@ describe(`DspfDesignerSession`, () => {
     expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
   });
 
+  it(`auto-increments newField names that already exist on the format`, async () => {
+    const lines = [`     A          R HEAD`, `     A            FIELD1        5A  B  1  2`];
+    const { session } = makeSession(lines);
+    const captured: WorkspaceEdit[] = [];
+    vscodeMocks.applyEdit.mockImplementation(async (edit: WorkspaceEdit) => {
+      captured.push(edit);
+      return true;
+    });
+
+    await session.handleMessage({
+      command: `newField`,
+      recordFormat: `HEAD`,
+      fieldInfo: {
+        name: `FIELD1`,
+        displayType: `both`,
+        type: `A`,
+        length: 10,
+        decimals: 0,
+        position: { x: 1, y: 3 },
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      },
+    });
+
+    expect(captured.length).toBe(1);
+    const edit = captured[0] as any;
+    expect(edit.replaces.length).toBe(0);
+    expect(edit.inserts.length).toBeGreaterThan(0);
+    expect(edit.inserts[0].text).toContain(`FIELD2`);
+    expect(edit.inserts[0].text).not.toMatch(/FIELD1\s/);
+  });
+
+  it(`auto-increments placeDatabaseFields names that collide with existing DDS fields`, async () => {
+    const lines = [`     A          R HEAD`, `     A            CUSTNAME      10A  O  2  5`];
+    const { session } = makeSession(lines);
+    const captured: WorkspaceEdit[] = [];
+    vscodeMocks.applyEdit.mockImplementation(async (edit: WorkspaceEdit) => {
+      captured.push(edit);
+      return true;
+    });
+
+    await session.handleMessage({
+      command: `placeDatabaseFields`,
+      recordFormat: `HEAD`,
+      fields: [
+        {
+          name: `CUSTNAME`,
+          displayType: `both`,
+          type: `R`,
+          isReference: true,
+          reference: `CUSTNAME MYLIB/CUSTFILE`,
+          length: 30,
+          decimals: 0,
+          position: { x: 2, y: 4 },
+          conditions: [],
+          keywords: [{ name: `REFFLD`, value: `CUSTNAME MYLIB/CUSTFILE`, conditions: [] }],
+          startRange: 0,
+        },
+        {
+          name: `CUSTNAME`,
+          displayType: `both`,
+          type: `R`,
+          isReference: true,
+          reference: `CUSTNAME MYLIB/OTHER`,
+          length: 10,
+          decimals: 0,
+          position: { x: 2, y: 5 },
+          conditions: [],
+          keywords: [{ name: `REFFLD`, value: `CUSTNAME MYLIB/OTHER`, conditions: [] }],
+          startRange: 0,
+        },
+      ],
+    });
+
+    expect(captured.length).toBe(1);
+    const edit = captured[0] as any;
+    expect(edit.replaces.length).toBe(0);
+    const inserted = edit.inserts.map((i: { text: string }) => i.text).join(`\n`);
+    expect(inserted).toContain(`CUSTNAME2`);
+    expect(inserted).toContain(`CUSTNAME3`);
+    expect(inserted).toContain(`REFFLD(CUSTNAME MYLIB/CUSTFILE)`);
+    expect(inserted).toContain(`REFFLD(CUSTNAME MYLIB/OTHER)`);
+  });
+
   it(`sanitizes showError messages from the webview`, async () => {
     const lines = [`     A          R HEAD`];
     const { session } = makeSession(lines);
@@ -299,6 +384,39 @@ describe(`DspfDesignerSession`, () => {
     });
 
     expect(vscodeMocks.showErrorMessage).toHaveBeenCalledWith(`boom`);
+  });
+
+  it(`maps Save / Don't Save / dismiss for unsaved field property edits`, async () => {
+    const lines = [`     A          R HEAD`];
+    const { session, panel } = makeSession(lines);
+
+    vscodeMocks.showWarningMessage.mockResolvedValueOnce(`Save`);
+    await session.handleMessage({
+      command: `requestSaveDiscard`,
+      requestId: `1`,
+      message: `Do you want to save the field property changes you made?`,
+    });
+    expect(panel.posted.at(-1)).toEqual({
+      command: `requestSaveDiscardResult`,
+      requestId: `1`,
+      choice: `save`,
+    });
+
+    vscodeMocks.showWarningMessage.mockResolvedValueOnce(`Don't Save`);
+    await session.handleMessage({
+      command: `requestSaveDiscard`,
+      requestId: `2`,
+      message: `Do you want to save the field property changes you made?`,
+    });
+    expect(panel.posted.at(-1)).toMatchObject({ requestId: `2`, choice: `discard` });
+
+    vscodeMocks.showWarningMessage.mockResolvedValueOnce(undefined);
+    await session.handleMessage({
+      command: `requestSaveDiscard`,
+      requestId: `3`,
+      message: `Do you want to save the field property changes you made?`,
+    });
+    expect(panel.posted.at(-1)).toMatchObject({ requestId: `3`, choice: `cancel` });
   });
 
   it(`labels designer tabs with an IBM i DDS suffix`, () => {
