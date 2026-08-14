@@ -1,13 +1,13 @@
 {
-  "name": "vscode-ibmi-renderer",
-  "displayName": "IBM i Display File Designer",
-  "description": "Visual designer for IBM i display and printer files (DDS)",
+  "name": "dds-designer",
+  "displayName": "Fiedler DDS Designer",
+  "description": "Visual designer for IBM i display and printer files (DDS). Fork of the Code for IBM i designer.",
   "version": "0.2.1",
-  "publisher": "halcyontechltd",
+  "publisher": "mitchfiedler",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/codefori/vscode-ibmi-renderer"
+    "url": "https://github.com/mitch123123/vscode-ibmi-renderer"
   },
   "engines": {
     "vscode": "^1.97.0"
@@ -40,14 +40,14 @@
   "activationEvents": [
     "onLanguage:dds.dspf",
     "onLanguage:dds.prtf",
-    "onCustomEditor:ibmi.dspfDesigner"
+    "onCustomEditor:mitchfiedler.dspfDesigner"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
       {
-        "viewType": "ibmi.dspfDesigner",
-        "displayName": "IBM i Display File Designer",
+        "viewType": "mitchfiedler.dspfDesigner",
+        "displayName": "Fiedler DDS Designer",
         "selector": [
           {
             "filenamePattern": "*.dspf"
@@ -79,95 +79,95 @@
     ],
     "commands": [
       {
-        "command": "vscode-ibmi-renderer.launchRenderer",
-        "title": "Edit / Preview",
-        "category": "IBM i",
+        "command": "mitchfiedler.ddsDesigner.launchRenderer",
+        "title": "Edit / Preview (Fiedler)",
+        "category": "Fiedler DDS",
         "icon": "$(edit)"
       },
       {
-        "command": "vscode-ibmi-renderer.editRecordFormat",
-        "title": "Edit Record Format",
-        "category": "IBM i",
+        "command": "mitchfiedler.ddsDesigner.editRecordFormat",
+        "title": "Edit Record Format (Fiedler)",
+        "category": "Fiedler DDS",
         "icon": "$(edit)"
       },
       {
-        "command": "vscode-ibmi-renderer.showSource",
+        "command": "mitchfiedler.ddsDesigner.showSource",
         "title": "Open DDS Source Beside",
-        "category": "IBM i",
+        "category": "Fiedler DDS",
         "icon": "$(file-code)"
       },
       {
-        "command": "vscode-ibmi-renderer.toggleEditorView",
+        "command": "mitchfiedler.ddsDesigner.toggleEditorView",
         "title": "Focus Other DDS Editor",
-        "category": "IBM i",
+        "category": "Fiedler DDS",
         "icon": "$(arrow-swap)"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
-          "when": "activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
-          "group": "navigation@0"
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "when": "activeCustomEditorId != mitchfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
+          "group": "navigation@1"
         },
         {
-          "command": "vscode-ibmi-renderer.showSource",
-          "when": "activeCustomEditorId == ibmi.dspfDesigner",
+          "command": "mitchfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner",
           "group": "navigation@0"
         }
       ],
       "editor/context": [
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
-          "when": "activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
-          "group": "navigation@0"
-        },
-        {
-          "command": "vscode-ibmi-renderer.showSource",
-          "when": "activeCustomEditorId == ibmi.dspfDesigner",
-          "group": "navigation@0"
-        },
-        {
-          "command": "vscode-ibmi-renderer.toggleEditorView",
-          "when": "activeCustomEditorId == ibmi.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "when": "activeCustomEditorId != mitchfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
           "group": "navigation@1"
+        },
+        {
+          "command": "mitchfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner",
+          "group": "navigation@0"
+        },
+        {
+          "command": "mitchfiedler.ddsDesigner.toggleEditorView",
+          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
+          "group": "navigation@2"
         }
       ],
       "explorer/context": [
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
           "when": "resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
-          "group": "navigation@0"
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
           "when": "view == objectBrowser && viewItem == member",
-          "group": "displayfile@0"
+          "group": "displayfile@1"
         },
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
           "when": "view == ifsBrowser && viewItem == streamfile",
-          "group": "displayfile@0"
+          "group": "displayfile@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "vscode-ibmi-renderer.launchRenderer",
+          "command": "mitchfiedler.ddsDesigner.launchRenderer",
           "when": "editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         },
         {
-          "command": "vscode-ibmi-renderer.editRecordFormat",
+          "command": "mitchfiedler.ddsDesigner.editRecordFormat",
           "when": "false"
         },
         {
-          "command": "vscode-ibmi-renderer.showSource",
-          "when": "activeCustomEditorId == ibmi.dspfDesigner"
+          "command": "mitchfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner"
         },
         {
-          "command": "vscode-ibmi-renderer.toggleEditorView",
-          "when": "activeCustomEditorId == ibmi.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
+          "command": "mitchfiedler.ddsDesigner.toggleEditorView",
+          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         }
       ]
     }
@@ -183,7 +183,7 @@
     "build:tsc": "tsc --noEmit --project tsconfig.json",
     "getTsTypesForFile": "tsc --declaration --emitDeclarationOnly --outDir types && cp types/ui/dspf.d.ts webui/dspf.d.ts",
     "package": "npm run build:frontend && npm run check-types && npm run lint && node esbuild.js --production",
-    "vsix": "vsce package --out vscode-ibmi-renderer.vsix",
+    "vsix": "vsce package --out dds-designer.vsix",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run"

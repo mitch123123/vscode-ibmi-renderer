@@ -5,7 +5,7 @@ import { announce } from "./a11y.js";
 
 setIndicatorChangeHandler(() => refreshCanvas());
 
-const LAYOUT_STORAGE_KEY = `ibmi.dspfDesigner.layout`;
+const LAYOUT_STORAGE_KEY = `mitchfiedler.dspfDesigner.layout`;
 const MIN_SIDE_WIDTH = 180;
 const MAX_SIDE_WIDTH = 480;
 const MIN_BOTTOM_HEIGHT = 120;

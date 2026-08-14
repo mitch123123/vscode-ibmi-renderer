@@ -1,11 +1,22 @@
-# IBM i Display File Designer
+# Fiedler DDS Designer
 
 Visual designer for IBM i display files (`.dspf`) and printer files (`.prtf`) —
 a VS Code custom editor aimed at Rational Developer for i Screen Designer
 workflows.
 
-Published as **`halcyontechltd.vscode-ibmi-renderer`**. See the
-[project board](https://github.com/orgs/codefori/projects/7) for what's next.
+Published as **`mitchfiedler.dds-designer`**.
+
+This is a fork of the designer created by the
+[Code for IBM i](https://github.com/codefori) team (Halcyon Tech Ltd and
+contributors). The original project is
+[codefori/vscode-ibmi-renderer](https://github.com/codefori/vscode-ibmi-renderer).
+The parser, round-trip editor, and IBM i integration are their work; this
+listing distributes a namespaced fork so it can be installed **alongside** the
+Code for IBM i designer and the older IBM i Renderer.
+
+Command ids, the custom editor view type (`mitchfiedler.dspfDesigner`), and
+webview layout storage are unique to this fork. Use **Open With → Fiedler DDS
+Designer** when both editors are installed.
 
 ---
 
@@ -27,23 +38,23 @@ Published as **`halcyontechltd.vscode-ibmi-renderer`**. See the
 
 ### VS Code Marketplace
 
-Search for **IBM i Display File Designer** in the Extensions view, or install:
+Search for **Fiedler DDS Designer** in the Extensions view, or install:
 
 ```text
-ext install halcyontechltd.vscode-ibmi-renderer
+ext install mitchfiedler.dds-designer
 ```
 
 Marketplace:
-https://marketplace.visualstudio.com/items?itemName=halcyontechltd.vscode-ibmi-renderer
+https://marketplace.visualstudio.com/items?itemName=mitchfiedler.dds-designer
 
 ### Open VSX
 
-https://open-vsx.org/extension/halcyontechltd/vscode-ibmi-renderer
+https://open-vsx.org/extension/mitchfiedler/dds-designer
 
 ### GitHub Release VSIX
 
-1. Download `vscode-ibmi-renderer.vsix` from the
-   [latest GitHub Release](https://github.com/codefori/vscode-ibmi-renderer/releases).
+1. Download `dds-designer.vsix` from the
+   [latest GitHub Release](https://github.com/mitch123123/vscode-ibmi-renderer/releases).
 2. In VS Code: **Extensions: Install from VSIX…** and select the file.
 
 ### From source
@@ -52,7 +63,7 @@ See [Development](#development) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Highlights
 
-- Custom text editor (`ibmi.dspfDesigner`) with full document sync + undo.
+- Custom text editor (`mitchfiedler.dspfDesigner`) with full document sync + undo.
 - Round-trip edits: `*` comments and blank lines outside the edited field are
   preserved byte-for-byte.
 - Drag/drop field palette, multi-select, marquee selection, keyboard move,
@@ -84,12 +95,12 @@ See [Development](#development) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 Try the samples after install: [`samples/DEMO.dspf`](samples/DEMO.dspf) or
 [`samples/SUBFILE.dspf`](samples/SUBFILE.dspf) (subfile + window).
 
-- From a DDS text editor: the title-bar **Edit / Preview** action, the
-  CodeLens at the top of the file, or **Edit** on a record-format line
-  (opens the designer on that format).
+- From a DDS text editor: the title-bar **Edit / Preview (Fiedler)** action, the
+  **Fiedler Designer** CodeLens at the top of the file, or **Edit (Fiedler)** on
+  a record-format line (opens this designer on that format).
 - From Explorer, Object Browser, or IFS Browser: right-click →
-  **Edit / Preview**.
-- Anywhere: **Open With… → IBM i Display File Designer**.
+  **Edit / Preview (Fiedler)**.
+- Anywhere: **Open With… → Fiedler DDS Designer**.
 - The designer and the normal DDS text editor can stay open **side by side**.
   Both share the same `TextDocument`, so canvas edits update the text editor
   immediately and typing in source refreshes the designer (lightly debounced).
@@ -108,13 +119,14 @@ This extension is designed to sit alongside the
 |-----------|--------------|
 | **Code for IBM i** | Soft dependency. Remote `member` / `streamfile` URIs open and save through its FS providers. Disconnect/reconnect closes or locks remote designer tabs like other editors. |
 | **IBMi Languages** (`barrettotte.ibmi-languages`) | Provides `dds.dspf` / `dds.prtf` language IDs and syntax highlighting. |
-| **IBM i Renderer** (marketplace `vscode-displayfile`) | Older CodeLens preview still shipped in the pack. This repo is the newer real-time designer — both can be installed; use **Edit / Preview** / **Open With** for this editor. |
+| **IBM i Renderer** (marketplace `vscode-displayfile`) | Older CodeLens preview still shipped in the pack. Both can stay installed; this fork uses **Edit / Preview (Fiedler)** / **Open With → Fiedler DDS Designer**. |
+| **IBM i Display File Designer** (`halcyontechltd.vscode-ibmi-renderer`) | Upstream real-time designer. Safe to install together: this fork uses a different publisher, view type, and command ids. |
 | RPGLE / CL / COBOL / Db2 / Project Explorer / Testing | No shared APIs; no conflicts expected. |
 
 ## Development
 
 ```powershell
-git clone https://github.com/codefori/vscode-ibmi-renderer.git
+git clone https://github.com/mitch123123/vscode-ibmi-renderer.git
 cd vscode-ibmi-renderer
 npm ci
 npm run compile
@@ -129,7 +141,7 @@ Press **F5** to launch the Extension Development Host, then open a sample DDS.
 | `npm run check-types`   | `tsc --noEmit` only.                                  |
 | `npm run lint`          | ESLint on `src`.                                      |
 | `npm run package`       | Production build (same as compile with `--production`). |
-| `npm run vsix`          | Package `vscode-ibmi-renderer.vsix`.                  |
+| `npm run vsix`          | Package `dds-designer.vsix`.                          |
 | `npm test`              | Vitest suite for the DDS model and host session.      |
 
 The webview bundle is produced by `esbuild.js`; static vendor assets
@@ -175,5 +187,6 @@ See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
 ## License
 
-MIT — see [`LICENSE`](https://github.com/codefori/vscode-ibmi-renderer/blob/main/LICENSE)
-in the repository (or the `license` field in `package.json`).
+MIT — see [`LICENSE`](LICENSE) in this repository (copyright Halcyon Tech Ltd /
+Code for IBM i contributors). The original license and copyright notice are
+kept as required by MIT.

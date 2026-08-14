@@ -1,6 +1,11 @@
 # Contributing
 
-Thanks for contributing to the IBM i Display File Designer.
+Thanks for contributing to Fiedler DDS Designer.
+
+This repository is a fork of
+[codefori/vscode-ibmi-renderer](https://github.com/codefori/vscode-ibmi-renderer),
+created by the [Code for IBM i](https://github.com/codefori) / Halcyon Tech Ltd
+team.
 
 ## Prerequisites
 
@@ -11,7 +16,7 @@ Thanks for contributing to the IBM i Display File Designer.
 ## Setup
 
 ```powershell
-git clone https://github.com/codefori/vscode-ibmi-renderer.git
+git clone https://github.com/mitch123123/vscode-ibmi-renderer.git
 cd vscode-ibmi-renderer
 npm ci
 npm run compile
@@ -60,7 +65,7 @@ Use the PR template. Before requesting review:
    `[x.y.z]` section.
 4. Commit, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 5. The [Release workflow](.github/workflows/release.yaml) will:
-   - Build `vscode-ibmi-renderer.vsix`
+   - Build `dds-designer.vsix`
    - Attach it to a GitHub Release
    - Publish to the VS Code Marketplace (`VSCE_PAT` secret)
    - Publish to Open VSX (`OVSX_PAT` secret)
@@ -69,7 +74,7 @@ Use the PR template. Before requesting review:
 
 | Secret | Purpose |
 |--------|---------|
-| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `halcyontechltd` |
+| `VSCE_PAT` | Azure DevOps Personal Access Token with **Marketplace → Manage** for publisher `mitchfiedler` |
 | `OVSX_PAT` | Open VSX personal access token for the same publisher identity |
 
 Without these secrets, the GitHub Release still uploads the VSIX and the

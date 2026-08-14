@@ -3,6 +3,7 @@ import { openDdsView } from './editorSwitch';
 import { registerEditPreviewCodeLens } from './editPreviewCodeLens';
 import { registerIbmiConnectionLifecycle } from './ibmiLifecycle';
 import { isProtectedDdsSource, protectedSourceMessage } from './protectedSource';
+import { COMMANDS } from './shared/messages';
 import { DspfDesignerProvider } from './ui';
 import { asBrowserNode, resolveDesignerUri, uriLooksLikeDesignerSource } from './uri';
 
@@ -36,14 +37,14 @@ async function openDesignerIfAllowed(
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	console.log('vscode-ibmi-renderer is now active');
+	console.log('mitchfiedler.dds-designer is now active');
 
 	context.subscriptions.push(DspfDesignerProvider.register(context));
 	registerIbmiConnectionLifecycle(context);
 	registerEditPreviewCodeLens(context);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-ibmi-renderer.launchRenderer', async (arg?: unknown) => {
+		vscode.commands.registerCommand(COMMANDS.launchRenderer, async (arg?: unknown) => {
 			const browserNode = asBrowserNode(arg);
 			const target = resolveDesignerUri(arg);
 			if (!target) {
@@ -62,7 +63,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}),
 
 		vscode.commands.registerCommand(
-			'vscode-ibmi-renderer.editRecordFormat',
+			COMMANDS.editRecordFormat,
 			async (uri?: vscode.Uri, formatName?: string) => {
 				const target = (uri instanceof vscode.Uri ? uri : undefined) ?? resolveDesignerUri();
 				const name = typeof formatName === `string` ? formatName.trim() : ``;
@@ -86,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		),
 
-		vscode.commands.registerCommand('vscode-ibmi-renderer.showSource', async (uri?: vscode.Uri) => {
+		vscode.commands.registerCommand(COMMANDS.showSource, async (uri?: vscode.Uri) => {
 			const target =
 				(uri instanceof vscode.Uri ? uri : undefined) ?? activeDesignerUri() ?? resolveDesignerUri();
 			if (!target) {
@@ -96,7 +97,7 @@ export function activate(context: vscode.ExtensionContext) {
 			await openDdsView(target, 'source');
 		}),
 
-		vscode.commands.registerCommand('vscode-ibmi-renderer.toggleEditorView', async () => {
+		vscode.commands.registerCommand(COMMANDS.toggleEditorView, async () => {
 			const designerUri = activeDesignerUri();
 			if (designerUri) {
 				await openDdsView(designerUri, 'source');
@@ -116,17 +117,23 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function warnIfLegacyRendererPresent(context: vscode.ExtensionContext) {
-	const legacy = vscode.extensions.getExtension('halcyontechltd.vscode-displayfile');
-	if (!legacy) {
+	const siblings: string[] = [];
+	if (vscode.extensions.getExtension('halcyontechltd.vscode-displayfile')) {
+		siblings.push('IBM i Renderer (CodeLens preview)');
+	}
+	if (vscode.extensions.getExtension('halcyontechltd.vscode-ibmi-renderer')) {
+		siblings.push('IBM i Display File Designer (Code for IBM i)');
+	}
+	if (siblings.length === 0) {
 		return;
 	}
-	const key = 'vscode-ibmi-renderer.legacyRendererNoticeShown';
+	const key = 'mitchfiedler.ddsDesigner.coexistenceNoticeShown';
 	if (context.globalState.get(key)) {
 		return;
 	}
 	void context.globalState.update(key, true);
 	void vscode.window.showInformationMessage(
-		'IBM i Display File Designer is the newer real-time DDS editor. The older “IBM i Renderer” (CodeLens Preview) from the Development Pack can stay installed — use the editor title Edit / Preview action (or Open With) for this designer.',
+		`Fiedler DDS Designer is installed alongside ${siblings.join(' and ')}. Use Open With or the Fiedler Edit / Preview actions to choose this editor — command ids and the designer view type are namespaced so both can stay enabled.`,
 		'Got it'
 	);
 }

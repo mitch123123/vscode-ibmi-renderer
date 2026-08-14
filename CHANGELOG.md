@@ -1,10 +1,19 @@
 # Change Log
 
-All notable changes to the **IBM i Display File Designer** extension are
+All notable changes to the **Fiedler DDS Designer** extension are
 documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- Published as **Fiedler DDS Designer** (`mitchfiedler.dds-designer`). Command
+  ids, custom editor view type (`mitchfiedler.dspfDesigner`), CodeLens titles,
+  tab suffix, and webview layout storage are namespaced so this fork can be
+  installed next to `halcyontechltd.vscode-ibmi-renderer` and the older IBM i
+  Renderer. Fork of the Code for IBM i / Halcyon Tech Ltd designer
+  ([codefori/vscode-ibmi-renderer](https://github.com/codefori/vscode-ibmi-renderer)).
 
 ### Added
 

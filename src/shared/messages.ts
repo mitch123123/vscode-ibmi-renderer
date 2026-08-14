@@ -97,4 +97,14 @@ export type WebviewToHostMessage =
       endLine: number;
     };
 
-export const VIEW_TYPE = "ibmi.dspfDesigner";
+/** Upstream Code for IBM i designer. Kept so menus/CodeLens do not collide when both are installed. */
+export const UPSTREAM_VIEW_TYPE = "ibmi.dspfDesigner";
+
+export const VIEW_TYPE = "mitchfiedler.dspfDesigner";
+
+export const COMMANDS = {
+  launchRenderer: "mitchfiedler.ddsDesigner.launchRenderer",
+  editRecordFormat: "mitchfiedler.ddsDesigner.editRecordFormat",
+  showSource: "mitchfiedler.ddsDesigner.showSource",
+  toggleEditorView: "mitchfiedler.ddsDesigner.toggleEditorView",
+} as const;
