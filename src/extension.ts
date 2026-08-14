@@ -37,7 +37,7 @@ async function openDesignerIfAllowed(
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	console.log('mitchfiedler.dds-designer is now active');
+	console.log('mitchellfiedler.dds-designer is now active');
 
 	context.subscriptions.push(DspfDesignerProvider.register(context));
 	registerIbmiConnectionLifecycle(context);
@@ -127,7 +127,7 @@ function warnIfLegacyRendererPresent(context: vscode.ExtensionContext) {
 	if (siblings.length === 0) {
 		return;
 	}
-	const key = 'mitchfiedler.ddsDesigner.coexistenceNoticeShown';
+	const key = 'mitchellfiedler.ddsDesigner.coexistenceNoticeShown';
 	if (context.globalState.get(key)) {
 		return;
 	}

@@ -61,6 +61,23 @@ export function requestHostConfirm(opts) {
 }
 
 /**
+ * Three-way Save / Don't Save / Cancel (Escape or dismiss).
+ * @param {{ message: string }} opts
+ * @returns {Promise<"save"|"discard"|"cancel">}
+ */
+export function requestHostSaveDiscard(opts) {
+  const requestId = String(nextId++);
+  return new Promise((resolve) => {
+    pending.set(requestId, resolve);
+    vscode.postMessage({
+      command: `requestSaveDiscard`,
+      requestId,
+      message: opts.message,
+    });
+  });
+}
+
+/**
  * Show an error via the host (replaces window.alert).
  * @param {string} message
  */

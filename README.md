@@ -4,7 +4,9 @@ Visual designer for IBM i display files (`.dspf`) and printer files (`.prtf`) �
 a VS Code custom editor aimed at Rational Developer for i Screen Designer
 workflows.
 
-Published as **`mitchfiedler.dds-designer`**.
+![IBM i DDS Designer editing a 24×80 display file](media/designer.png)
+
+Published as **`mitchellfiedler.dds-designer`**.
 
 This is a fork of the designer created by the
 [Code for IBM i](https://github.com/codefori) team (Halcyon Tech Ltd and
@@ -14,7 +16,7 @@ The parser, round-trip editor, and IBM i integration are their work; this
 listing distributes a namespaced fork so it can be installed **alongside** the
 Code for IBM i designer and the older IBM i Renderer.
 
-Command ids, the custom editor view type (`mitchfiedler.dspfDesigner`), and
+Command ids, the custom editor view type (`mitchellfiedler.dspfDesigner`), and
 webview layout storage are unique to this fork. Use **Open With → IBM i DDS
 Designer** when both editors are installed.
 
@@ -41,15 +43,15 @@ Designer** when both editors are installed.
 Search for **IBM i DDS Designer** in the Extensions view, or install:
 
 ```text
-ext install mitchfiedler.dds-designer
+ext install mitchellfiedler.dds-designer
 ```
 
 Marketplace:
-https://marketplace.visualstudio.com/items?itemName=mitchfiedler.dds-designer
+https://marketplace.visualstudio.com/items?itemName=mitchellfiedler.dds-designer
 
 ### Open VSX
 
-https://open-vsx.org/extension/mitchfiedler/dds-designer
+https://open-vsx.org/extension/mitchellfiedler/dds-designer
 
 ### GitHub Release VSIX
 
@@ -63,7 +65,7 @@ See [Development](#development) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Highlights
 
-- Custom text editor (`mitchfiedler.dspfDesigner`) with full document sync + undo.
+- Custom text editor (`mitchellfiedler.dspfDesigner`) with full document sync + undo.
 - Round-trip edits: `*` comments and blank lines outside the edited field are
   preserved byte-for-byte.
 - Drag/drop field palette, multi-select, marquee selection, keyboard move,
@@ -120,7 +122,6 @@ This extension is designed to sit alongside the
 | **Code for IBM i** | Soft dependency. Remote `member` / `streamfile` URIs open and save through its FS providers. Disconnect/reconnect closes or locks remote designer tabs like other editors. |
 | **IBMi Languages** (`barrettotte.ibmi-languages`) | Provides `dds.dspf` / `dds.prtf` language IDs and syntax highlighting. |
 | **IBM i Renderer** (marketplace `vscode-displayfile`) | Older CodeLens preview still shipped in the pack. Both can stay installed; this fork uses **Edit / Preview (IBM i DDS)** / **Open With → IBM i DDS Designer**. |
-| **IBM i Display File Designer** (`halcyontechltd.vscode-ibmi-renderer`) | Upstream real-time designer. Safe to install together: this fork uses a different publisher, view type, and command ids. |
 | RPGLE / CL / COBOL / Db2 / Project Explorer / Testing | No shared APIs; no conflicts expected. |
 
 ## Development

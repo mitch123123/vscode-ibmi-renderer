@@ -8,10 +8,11 @@ documented here. The format loosely follows
 
 ### Changed
 
+- Publisher id is `mitchellfiedler` (Marketplace listing `mitchellfiedler.dds-designer`).
 - Merging to `main` publishes to the VS Code Marketplace after CI is green, when
   `package.json` version has no matching `v*` git tag (`VSCE_PAT` required).
-- Published as **IBM i DDS Designer** (`mitchfiedler.dds-designer`). Command
-  ids, custom editor view type (`mitchfiedler.dspfDesigner`), CodeLens titles,
+- Published as **IBM i DDS Designer** (`mitchellfiedler.dds-designer`). Command
+  ids, custom editor view type (`mitchellfiedler.dspfDesigner`), CodeLens titles,
   tab suffix, and webview layout storage are namespaced so this fork can be
   installed next to `halcyontechltd.vscode-ibmi-renderer` and the older IBM i
   Renderer. Fork of the Code for IBM i / Halcyon Tech Ltd designer
@@ -41,9 +42,17 @@ documented here. The format loosely follows
 
 ### Fixed
 
+- New fields (palette, paste, database REFFLD) auto-increment colliding names
+  (`FIELD1` → `FIELD2`, `CUSTNAME` → `CUSTNAME2`) so an existing field's DDS
+  source is never overwritten.
+- Copy/paste of a canvas field now assigns a valid DDS name (`FIELD1` →
+  `FIELD2`) instead of appending `_C`, which is illegal in IBM i field names.
 - Closing the designer (or VS Code) with unsaved DDS edits now prompts to
   save. Pending source-pane / nudge edits are flushed first so the document
   is marked dirty before the prompt.
+- Leaving a field while its Properties / Keywords panel has un-applied edits
+  now prompts to **Save**, **Don't Save**, or cancel, instead of silently
+  discarding the form.
 
 ### Removed
 

@@ -35,6 +35,11 @@ export type HostToWebviewMessage =
   | { command: "showError"; message: string }
   | { command: "requestInputResult"; requestId: string; value?: string }
   | { command: "requestConfirmResult"; requestId: string; confirmed: boolean }
+  | {
+      command: "requestSaveDiscardResult";
+      requestId: string;
+      choice: "save" | "discard" | "cancel";
+    }
   /** Switch to Design mode and activate the named record-format tab. */
   | { command: "selectFormat"; recordFormat: string }
   /** Ask the webview to immediately send any debounced nudge edits. */
@@ -87,6 +92,11 @@ export type WebviewToHostMessage =
       confirmLabel?: string;
     }
   | {
+      command: "requestSaveDiscard";
+      requestId: string;
+      message: string;
+    }
+  | {
       command: "showError";
       message: string;
     }
@@ -100,11 +110,11 @@ export type WebviewToHostMessage =
 /** Upstream Code for IBM i designer. Kept so menus/CodeLens do not collide when both are installed. */
 export const UPSTREAM_VIEW_TYPE = "ibmi.dspfDesigner";
 
-export const VIEW_TYPE = "mitchfiedler.dspfDesigner";
+export const VIEW_TYPE = "mitchellfiedler.dspfDesigner";
 
 export const COMMANDS = {
-  launchRenderer: "mitchfiedler.ddsDesigner.launchRenderer",
-  editRecordFormat: "mitchfiedler.ddsDesigner.editRecordFormat",
-  showSource: "mitchfiedler.ddsDesigner.showSource",
-  toggleEditorView: "mitchfiedler.ddsDesigner.toggleEditorView",
+  launchRenderer: "mitchellfiedler.ddsDesigner.launchRenderer",
+  editRecordFormat: "mitchellfiedler.ddsDesigner.editRecordFormat",
+  showSource: "mitchellfiedler.ddsDesigner.showSource",
+  toggleEditorView: "mitchellfiedler.ddsDesigner.toggleEditorView",
 } as const;

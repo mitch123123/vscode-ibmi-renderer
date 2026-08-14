@@ -7,6 +7,43 @@ import {
   keywordConflicts,
   keywordNameOptionsGrouped,
 } from "./keywordCatalog.js";
+import {
+  keywordsChanged,
+  readPropValuesFromElement,
+} from "./fieldEditState.js";
+
+/** @type {WeakMap<HTMLElement, { getKeywords: () => Keyword[], isDirty: () => boolean }>} */
+const keywordPanelApi = new WeakMap();
+
+/** @type {(() => boolean)|null} */
+let commitOpenKeywordEditor = null;
+
+/**
+ * @param {HTMLElement} panel
+ */
+export function getKeywordPanelApi(panel) {
+  return keywordPanelApi.get(panel);
+}
+
+export function isKeywordEditorOpen() {
+  const keywordEditorArea = document.getElementById(`keywordEditorArea`);
+  return !!(keywordEditorArea && keywordEditorArea.childElementCount > 0);
+}
+
+/**
+ * Confirm an in-progress keyword add/edit if a name is present; otherwise close it.
+ * @returns {boolean}
+ */
+export function tryCommitKeywordEditor() {
+  if (!isKeywordEditorOpen()) {
+    return true;
+  }
+  if (commitOpenKeywordEditor) {
+    return commitOpenKeywordEditor();
+  }
+  clearKeywordEditor();
+  return true;
+}
 
 /**
  * @param {string} id
@@ -15,6 +52,8 @@ import {
  * @param {KeywordLevel} [level]
  */
 export function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`) {
+  /** @type {Keyword[]} */
+  const originalKeywords = JSON.parse(JSON.stringify(inputKeywords || []));
   /** @type {Keyword[]} */
   const keywords = JSON.parse(JSON.stringify(inputKeywords || []));
 
@@ -140,6 +179,11 @@ export function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`)
     section.appendChild(updateButton);
     refreshConflictWarnings();
   }
+
+  keywordPanelApi.set(section, {
+    getKeywords: () => keywords,
+    isDirty: () => keywordsChanged(originalKeywords, keywords),
+  });
 
   return section;
 }
@@ -287,20 +331,7 @@ export function createValuesPanel(id, properties, onUpdate) {
     updateButton.style.margin = `1em`;
     updateButton.style.display = `block`;
     updateButton.addEventListener(`click`, () => {
-      /** @type {Record<string, string>} */
-      const newProperties = {};
-      section.querySelectorAll(`[data-prop-id]`).forEach((el) => {
-        const propId = el.dataset.propId;
-        if (!propId) {
-          return;
-        }
-        if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) {
-          newProperties[propId] = el.value;
-        } else if (el instanceof HTMLElement) {
-          newProperties[propId] = el.innerText;
-        }
-      });
-      onUpdate(newProperties);
+      onUpdate(readPropValuesFromElement(section));
     });
     section.appendChild(updateButton);
   }
@@ -309,6 +340,7 @@ export function createValuesPanel(id, properties, onUpdate) {
 }
 
 export function clearKeywordEditor() {
+  commitOpenKeywordEditor = null;
   const keywordEditorArea = document.getElementById(`keywordEditorArea`);
   if (keywordEditorArea) {
     keywordEditorArea.innerHTML = ``;
@@ -650,12 +682,12 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
   button.style.marginTop = `1em`;
   button.style.display = `block`;
   button.innerText = `Confirm`;
-  button.onclick = () => {
+  const commitKeyword = () => {
     /** @type {any} */
     const nameEl = group.querySelector(`#keyword`);
     let keywordName = (nameSelect.value || nameEl?.value || ``).trim().toUpperCase();
     if (!keywordName) {
-      return;
+      return false;
     }
 
     let keywordValue = getCurrentValueString().trim();
@@ -689,6 +721,19 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
     }
 
     onUpdate(newKeyword);
+    return true;
+  };
+
+  button.onclick = () => {
+    commitKeyword();
+  };
+  commitOpenKeywordEditor = () => {
+    if (commitKeyword()) {
+      return true;
+    }
+    // Empty name — nothing to commit; drop the unfinished form.
+    clearKeywordEditor();
+    return true;
   };
 
   group.appendChild(button);

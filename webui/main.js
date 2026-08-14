@@ -586,8 +586,71 @@
     return warnings;
   }
 
+  // webui/src/fieldEditState.js
+  function snapshotPropValues(properties) {
+    const out = {};
+    for (const p of properties || []) {
+      if (p.id) {
+        out[p.id] = String(p.value ?? ``);
+      }
+    }
+    return out;
+  }
+  function readPropValuesFromElement(root) {
+    const newProperties = {};
+    if (!root || typeof root.querySelectorAll !== `function`) {
+      return newProperties;
+    }
+    root.querySelectorAll(`[data-prop-id]`).forEach((el) => {
+      const propId = el && el.dataset ? el.dataset.propId : void 0;
+      if (!propId) {
+        return;
+      }
+      if (typeof el.value === `string`) {
+        newProperties[propId] = el.value;
+      } else if (typeof el.innerText === `string`) {
+        newProperties[propId] = el.innerText;
+      }
+    });
+    return newProperties;
+  }
+  function propValuesChanged(original, current) {
+    const orig = original || {};
+    const curr = current || {};
+    const ids = /* @__PURE__ */ new Set([...Object.keys(orig), ...Object.keys(curr)]);
+    for (const id of ids) {
+      if (String(orig[id] ?? ``) !== String(curr[id] ?? ``)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function keywordsChanged(original, current) {
+    return JSON.stringify(original || []) !== JSON.stringify(current || []);
+  }
+
   // webui/src/keywordEditor.js
+  var keywordPanelApi = /* @__PURE__ */ new WeakMap();
+  var commitOpenKeywordEditor = null;
+  function getKeywordPanelApi(panel) {
+    return keywordPanelApi.get(panel);
+  }
+  function isKeywordEditorOpen() {
+    const keywordEditorArea = document.getElementById(`keywordEditorArea`);
+    return !!(keywordEditorArea && keywordEditorArea.childElementCount > 0);
+  }
+  function tryCommitKeywordEditor() {
+    if (!isKeywordEditorOpen()) {
+      return true;
+    }
+    if (commitOpenKeywordEditor) {
+      return commitOpenKeywordEditor();
+    }
+    clearKeywordEditor();
+    return true;
+  }
   function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`) {
+    const originalKeywords = JSON.parse(JSON.stringify(inputKeywords || []));
     const keywords = JSON.parse(JSON.stringify(inputKeywords || []));
     const section = document.createElement(`div`);
     section.id = id;
@@ -693,6 +756,10 @@
       section.appendChild(updateButton);
       refreshConflictWarnings();
     }
+    keywordPanelApi.set(section, {
+      getKeywords: () => keywords,
+      isDirty: () => keywordsChanged(originalKeywords, keywords)
+    });
     return section;
   }
   function createValuesPanel(id, properties, onUpdate) {
@@ -806,25 +873,14 @@
       updateButton.style.margin = `1em`;
       updateButton.style.display = `block`;
       updateButton.addEventListener(`click`, () => {
-        const newProperties = {};
-        section.querySelectorAll(`[data-prop-id]`).forEach((el) => {
-          const propId = el.dataset.propId;
-          if (!propId) {
-            return;
-          }
-          if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) {
-            newProperties[propId] = el.value;
-          } else if (el instanceof HTMLElement) {
-            newProperties[propId] = el.innerText;
-          }
-        });
-        onUpdate(newProperties);
+        onUpdate(readPropValuesFromElement(section));
       });
       section.appendChild(updateButton);
     }
     return section;
   }
   function clearKeywordEditor() {
+    commitOpenKeywordEditor = null;
     const keywordEditorArea = document.getElementById(`keywordEditorArea`);
     if (keywordEditorArea) {
       keywordEditorArea.innerHTML = ``;
@@ -1112,11 +1168,11 @@
     button.style.marginTop = `1em`;
     button.style.display = `block`;
     button.innerText = `Confirm`;
-    button.onclick = () => {
+    const commitKeyword = () => {
       const nameEl = group.querySelector(`#keyword`);
       let keywordName = (nameSelect.value || nameEl?.value || ``).trim().toUpperCase();
       if (!keywordName) {
-        return;
+        return false;
       }
       let keywordValue = getCurrentValueString().trim();
       const def = findKeywordDef(keywordName, level);
@@ -1162,6 +1218,17 @@
         newKeyword.conditions.push({ indicator: Number(ind3), negate: !!neg3 });
       }
       onUpdate(newKeyword);
+      return true;
+    };
+    button.onclick = () => {
+      commitKeyword();
+    };
+    commitOpenKeywordEditor = () => {
+      if (commitKeyword()) {
+        return true;
+      }
+      clearKeywordEditor();
+      return true;
     };
     group.appendChild(button);
     ensureRightSidebarVisible();
@@ -1243,6 +1310,55 @@
     return RECORD_NAME_RE.test((name || ``).trim().toUpperCase());
   }
   var isValidFieldName = isValidRecordName;
+  function sanitizeFieldName(raw) {
+    let s = String(raw ?? ``).toUpperCase().replace(/\s+/g, ``);
+    s = s.replace(/[^A-Z0-9@#$]/g, ``);
+    s = s.replace(/^[0-9]+/, ``);
+    s = s.slice(0, FIELD_NAME_MAX);
+    return s || `FIELD`;
+  }
+  function uniqueFieldName(base, existingNames) {
+    const taken = new Set(
+      Array.from(existingNames, (n2) => String(n2 || ``).toUpperCase())
+    );
+    const sanitized = sanitizeFieldName(base);
+    if (!taken.has(sanitized)) {
+      return sanitized;
+    }
+    const m = sanitized.match(/^(.*?)(\d+)$/);
+    const prefix = (m ? m[1] : sanitized) || `F`;
+    let n = m ? Number.parseInt(m[2], 10) + 1 : 2;
+    for (let i = 0; i < 1e4; i++, n++) {
+      const suffix = String(n);
+      const room = FIELD_NAME_MAX - suffix.length;
+      if (room < 1) {
+        continue;
+      }
+      const name = `${prefix.slice(0, room)}${suffix}`;
+      if (!taken.has(name) && isValidFieldName(name)) {
+        return name;
+      }
+    }
+    let fallback = `F${Date.now()}`.slice(0, FIELD_NAME_MAX);
+    for (let guard = 0; taken.has(fallback) && guard < 100; guard++) {
+      fallback = `F${Date.now()}${guard}`.slice(0, FIELD_NAME_MAX);
+    }
+    return fallback;
+  }
+  function uniquifyNewFieldNames(fields, existingNames) {
+    const taken = new Set(
+      Array.from(existingNames, (n) => String(n || ``).toUpperCase()).filter(Boolean)
+    );
+    for (const field of fields) {
+      if (field.displayType === `const` || !(field.name || ``).trim()) {
+        continue;
+      }
+      const unique = uniqueFieldName(field.name, taken);
+      field.name = unique;
+      taken.add(unique.toUpperCase());
+    }
+    return fields;
+  }
   var RECORD_NAME_HINT = `Use 1\u2013${FIELD_NAME_MAX} characters: A\u2013Z, 0\u20139, @, #, $ (must start with a letter or @/#/$); no spaces.`;
   var FIELD_NAME_HINT = RECORD_NAME_HINT;
   var DDS_MAX_LENGTH = 99999;
@@ -1807,6 +1923,17 @@
       });
     });
   }
+  function requestHostSaveDiscard(opts) {
+    const requestId = String(nextId++);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      vscode.postMessage({
+        command: `requestSaveDiscard`,
+        requestId,
+        message: opts.message
+      });
+    });
+  }
   function showHostError(message) {
     vscode.postMessage({ command: `showError`, message });
   }
@@ -2060,6 +2187,56 @@
     const where = span ? ` at row ${span.row}, columns ${span.start}\u2013${span.end}` : ``;
     const verb = hits.length === 1 ? `Overlaps` : `Overlaps`;
     return `${verb} ${names}${where}. Overlapping fields will not compile.`;
+  }
+
+  // webui/src/fieldEditGuard.js
+  var controller = null;
+  var promptInFlight = false;
+  function setFieldEditController(next) {
+    controller = next;
+  }
+  function clearFieldEditController() {
+    controller = null;
+  }
+  function hasDirtyFieldEdits() {
+    try {
+      return controller?.isDirty() === true;
+    } catch {
+      return false;
+    }
+  }
+  function dirtyFieldName() {
+    return controller?.fieldName;
+  }
+  function flushDirtyFieldEdits() {
+    if (!hasDirtyFieldEdits() || !controller) {
+      return true;
+    }
+    return controller.apply() === true;
+  }
+  async function confirmLeaveFieldEdits() {
+    if (promptInFlight) {
+      return false;
+    }
+    if (!hasDirtyFieldEdits()) {
+      return true;
+    }
+    promptInFlight = true;
+    try {
+      const choice = await requestHostSaveDiscard({
+        message: `Do you want to save the field property changes you made?`
+      });
+      if (choice === `save`) {
+        return controller?.apply() === true;
+      }
+      if (choice === `discard`) {
+        clearFieldEditController();
+        return true;
+      }
+      return false;
+    } finally {
+      promptInFlight = false;
+    }
   }
 
   // webui/src/sidebar.js
@@ -2353,6 +2530,7 @@
     renderIndicatorPanel(indicatorHost);
   }
   function showFieldPalette(onCreate, opts) {
+    clearFieldEditController();
     clearKeywordEditor();
     const sidebar = document.getElementById(`fieldInfoSidebar`);
     renderPalette(sidebar, onCreate, opts);
@@ -2530,35 +2708,52 @@
         constraints: limits.reference
       });
     }
+    const originalProps = snapshotPropValues(properties);
+    const commitField = (newProps, keywords) => {
+      const result = normalizeFieldProps(fieldInfo, newProps);
+      if (!result.ok) {
+        showHostError(result.error);
+        return false;
+      }
+      if (opts.bounds) {
+        const fitError = validateFieldScreenFit(result.field, opts.bounds);
+        if (fitError) {
+          showHostError(fitError);
+          return false;
+        }
+      }
+      const next = keywords ? { ...result.field, keywords } : result.field;
+      clearFieldEditController();
+      onUpdate(next);
+      return true;
+    };
     const keywordsHost = document.createElement(`div`);
     keywordsHost.className = `keywords-section`;
     if (opts.generalTools) {
       keywordsHost.appendChild(opts.generalTools);
     }
-    keywordsHost.appendChild(
-      createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
-        onUpdate({ ...fieldInfo, keywords });
-      }, `field`)
+    const keywordPanel = createKeywordPanel(
+      `keywords-${fieldInfo.name || `field`}`,
+      fieldInfo.keywords || [],
+      (keywords) => {
+        commitField(readPropValuesFromElement(valuesPanel), keywords);
+      },
+      `field`
+    );
+    keywordsHost.appendChild(keywordPanel);
+    const valuesPanel = createValuesPanel(
+      `properties-${fieldInfo.name || `field`}`,
+      properties,
+      (newProps) => {
+        const kwApi = getKeywordPanelApi(keywordPanel);
+        commitField(newProps, kwApi?.getKeywords());
+      }
     );
     const sections = [
       {
         title: `Properties`,
         open: true,
-        html: createValuesPanel(`properties-${fieldInfo.name || `field`}`, properties, (newProps) => {
-          const result = normalizeFieldProps(fieldInfo, newProps);
-          if (!result.ok) {
-            showHostError(result.error);
-            return;
-          }
-          if (opts.bounds) {
-            const fitError = validateFieldScreenFit(result.field, opts.bounds);
-            if (fitError) {
-              showHostError(fitError);
-              return;
-            }
-          }
-          onUpdate(result.field);
-        })
+        html: valuesPanel
       },
       {
         title: `Keywords`,
@@ -2567,6 +2762,22 @@
       }
     ];
     renderSections(sidebar, sections);
+    setFieldEditController({
+      fieldName: fieldInfo.name,
+      isDirty: () => {
+        const propsDirty = propValuesChanged(originalProps, readPropValuesFromElement(valuesPanel));
+        const kwApi = getKeywordPanelApi(keywordPanel);
+        const keywordsDirty = kwApi?.isDirty() === true;
+        return propsDirty || keywordsDirty || isKeywordEditorOpen();
+      },
+      apply: () => {
+        if (!tryCommitKeywordEditor()) {
+          return false;
+        }
+        const kwApi = getKeywordPanelApi(keywordPanel);
+        return commitField(readPropValuesFromElement(valuesPanel), kwApi?.getKeywords());
+      }
+    });
     const overlapMsg = formatOverlapWarning(fieldInfo, opts.peerFields);
     if (overlapMsg) {
       const warn = document.createElement(`div`);
@@ -2579,7 +2790,10 @@
     deleteButton.setAttribute(`secondary`, `true`);
     deleteButton.className = `panel-delete-btn`;
     deleteButton.innerText = `Delete`;
-    deleteButton.addEventListener(`click`, onDelete);
+    deleteButton.addEventListener(`click`, () => {
+      clearFieldEditController();
+      onDelete();
+    });
     sidebar.appendChild(deleteButton);
   }
 
@@ -2685,7 +2899,13 @@
   function editsAllowed() {
     return editorMode === `design` && connectionConnected;
   }
-  function setEditorMode(mode) {
+  async function setEditorMode(mode) {
+    if (mode === editorMode) {
+      return;
+    }
+    if (!await confirmLeaveFieldEdits()) {
+      return;
+    }
     editorMode = mode;
     const badge = document.getElementById(`modeBadge`);
     if (badge) {
@@ -2699,7 +2919,7 @@
       setWindowForFormat(lastSelectedFormat);
     }
   }
-  function selectRecordFormat(formatName) {
+  async function selectRecordFormat(formatName) {
     const name = (formatName || ``).trim();
     if (!name || !activeDocument) {
       return;
@@ -2708,6 +2928,9 @@
       (f) => f.name === name && f.name !== GLOBAL_RECORD_FORMAT
     );
     if (!exists) {
+      return;
+    }
+    if (name !== lastSelectedFormat && !await confirmLeaveFieldEdits()) {
       return;
     }
     editorMode = `design`;
@@ -2857,8 +3080,7 @@
         return;
       }
       if (!e.evt.shiftKey) {
-        clearSelection();
-        openDesignPalette();
+        void requestClearSelection(true);
       }
     });
     let marquee;
@@ -2890,21 +3112,26 @@
       setTimeout(() => {
         suppressNextBgClick = false;
       }, 300);
-      clearSelection(false);
-      const groups = fieldLayer.find(`Group`);
-      groups.forEach((g) => {
-        if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+      void (async () => {
+        if (!await confirmLeaveFieldEdits()) {
           return;
         }
-        const rect = g.getClientRect();
-        if (Konva.Util.haveIntersection(box, rect)) {
-          const field = findFieldByName(g.id());
-          if (field) {
-            addToSelection(g, field, false);
+        clearSelection(false);
+        const groups = fieldLayer.find(`Group`);
+        groups.forEach((g) => {
+          if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+            return;
           }
-        }
-      });
-      updateSelectionUi();
+          const rect = g.getClientRect();
+          if (Konva.Util.haveIntersection(box, rect)) {
+            const field = findFieldByName(g.id());
+            if (field) {
+              addToSelection(g, field, false);
+            }
+          }
+        });
+        updateSelectionUi();
+      })();
     };
     bg.on("mousedown", (e) => {
       if (!editsAllowed()) {
@@ -3046,13 +3273,24 @@
         const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === fieldName) || [];
         const group = matches[0];
         if (field && group) {
-          setActiveField(group, field);
+          void setActiveField(group, field);
         }
       }
     );
     syncFormatTabActive(chosenFormat);
     clearSelection(false);
-    if (pendingSelectionNames.length > 0) {
+    if (hasDirtyFieldEdits()) {
+      pendingSelectionNames = [];
+      const name = dirtyFieldName();
+      if (name) {
+        const field = findFieldByName(name);
+        const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
+        const group = matches[0];
+        if (field && group) {
+          addToSelection(group, field, false);
+        }
+      }
+    } else if (pendingSelectionNames.length > 0) {
       const names = [...pendingSelectionNames];
       pendingSelectionNames = [];
       names.forEach((name) => {
@@ -3660,9 +3898,9 @@
       group.on("pointerclick", (e) => {
         e.cancelBubble = true;
         if (e.evt.shiftKey) {
-          toggleSelection(group, fieldInfo);
+          void toggleSelection(group, fieldInfo);
         } else {
-          setActiveField(group, fieldInfo);
+          void setActiveField(group, fieldInfo);
         }
       });
       group.on(`dblclick`, (e) => {
@@ -3716,6 +3954,10 @@
     const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
     return format?.fields || [];
   }
+  function existingFieldNames(recordFormat) {
+    const format = activeDocument?.formats.find((f) => f.name === recordFormat);
+    return (format?.fields || []).map((f) => f.name).filter(Boolean);
+  }
   function fieldBackgroundColour(field, selected) {
     if (selected) {
       return SELECTED_COLOUR;
@@ -3737,14 +3979,27 @@
       updateSelectionUi();
     }
   }
+  async function requestClearSelection(updatePalette = true) {
+    if (!await confirmLeaveFieldEdits()) {
+      return false;
+    }
+    clearSelection(updatePalette);
+    return true;
+  }
   function updateSelectionUi(opts = {}) {
+    if (selectedItems.length === 1 && hasDirtyFieldEdits() && selectedItems[0].field.name === dirtyFieldName()) {
+      return;
+    }
     if (selectedItems.length === 1) {
       const selected = selectedItems[0];
       const originalFieldName = selected.field.name;
       updateSelectedFieldSidebar(
         selected.field,
         (field) => sendFieldUpdate(lastSelectedFormat, originalFieldName, field),
-        () => sendDelete(lastSelectedFormat, originalFieldName),
+        () => {
+          clearFieldEditController();
+          sendDelete(lastSelectedFormat, originalFieldName);
+        },
         {
           generalTools: createSelectionTools(false),
           bounds: currentPositionBounds(),
@@ -3769,6 +4024,7 @@
     }
   }
   function updateMultiSelectSidebar() {
+    clearFieldEditController();
     const sidebar = document.getElementById(`fieldInfoSidebar`);
     if (!sidebar) {
       return;
@@ -3959,7 +4215,10 @@
       updateSelectionUi();
     }
   }
-  function toggleSelection(group, fieldInfo) {
+  async function toggleSelection(group, fieldInfo) {
+    if (!await confirmLeaveFieldEdits()) {
+      return;
+    }
     const idx = selectedItems.findIndex((s) => s.field.name === fieldInfo.name);
     if (idx >= 0) {
       const bg = selectedItems[idx].group.findOne(`#bg`);
@@ -3972,7 +4231,13 @@
     }
     addToSelection(group, fieldInfo);
   }
-  function setActiveField(konvaElement, fieldInfo) {
+  async function setActiveField(konvaElement, fieldInfo) {
+    if (konvaElement && selectedItems.length === 1 && selectedItems[0].group === konvaElement) {
+      return;
+    }
+    if (!await confirmLeaveFieldEdits()) {
+      return;
+    }
     clearKeywordEditor();
     clearSelection(false);
     if (konvaElement && fieldInfo) {
@@ -4029,11 +4294,14 @@
       panel.setAttribute(`aria-labelledby`, activeBtn.id);
     }
   }
-  function activateFormatTab(formatName) {
+  async function activateFormatTab(formatName) {
     if (!formatName) {
       return;
     }
     if (formatName === lastSelectedFormat) {
+      return;
+    }
+    if (!await confirmLeaveFieldEdits()) {
       return;
     }
     overlayFormats = [];
@@ -4275,20 +4543,6 @@
     }
     return false;
   }
-  function uniqueFieldName(base, existingNames) {
-    let name = base.substring(0, 10);
-    if (!existingNames.has(name)) {
-      return name;
-    }
-    for (let i = 2; i < 100; i++) {
-      const suffix = String(i);
-      name = `${base.substring(0, Math.max(1, 10 - suffix.length))}${suffix}`;
-      if (!existingNames.has(name)) {
-        return name;
-      }
-    }
-    return `F${Date.now()}`.substring(0, 10);
-  }
   var nudgeTimer = void 0;
   var pendingNudge = void 0;
   function cancelPendingNudge() {
@@ -4318,6 +4572,10 @@
       announce(`Moved ${updates.length} fields`);
     }
   }
+  function flushPendingEdits() {
+    flushPendingNudge();
+    flushDirtyFieldEdits();
+  }
   function scheduleNudgeUpdate(recordFormat, updates) {
     pendingNudge = { recordFormat, updates };
     if (nudgeTimer) {
@@ -4340,7 +4598,7 @@
         if (selectedItems.length > 0) {
           e.preventDefault();
           cancelPendingNudge();
-          clearSelection(true);
+          void requestClearSelection(true);
           document.getElementById(`container`)?.focus();
           announce(`Selection cleared`);
         }
@@ -4367,8 +4625,7 @@
               wasY0 ? 0 : field.position.y + 1,
               { ...bounds2, wasY0, length: len }
             );
-            const base = (copy.name || `FIELD`).replace(/_C\d*$/, ``);
-            copy.name = uniqueFieldName(`${base}_C`, existing);
+            copy.name = uniqueFieldName(copy.name || `FIELD`, existing);
             existing.add(copy.name);
             return copy;
           });
@@ -4394,6 +4651,7 @@
       if (e.key === `Delete` || e.key === `Backspace`) {
         const names = selectedItems.map((s) => s.field.name).filter(Boolean);
         if (names.length === 1) {
+          clearFieldEditController();
           sendDelete(lastSelectedFormat, names[0]);
         } else if (names.length > 1) {
           void (async () => {
@@ -4402,6 +4660,7 @@
               confirmLabel: `Delete`
             });
             if (confirmed) {
+              clearFieldEditController();
               sendDeleteFields(lastSelectedFormat, names);
             }
           })();
@@ -4425,7 +4684,7 @@
         const next = visible[idx];
         const group = fieldLayer?.findOne(`#${next.name}`);
         if (group) {
-          setActiveField(group, next);
+          void setActiveField(group, next);
         }
         return;
       }
@@ -4513,21 +4772,23 @@
     const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === first.name) || [];
     const group = matches[0];
     if (group) {
-      setActiveField(group, first);
+      void setActiveField(group, first);
     }
   }
   function sendNewField(recordFormat, fieldInfo) {
     if (!editsAllowed()) {
       return;
     }
+    uniquifyNewFieldNames([fieldInfo], existingFieldNames(recordFormat));
     vscode.postMessage({ command: `newField`, recordFormat, fieldInfo });
   }
   function sendNewFields(recordFormat, fields) {
     if (!editsAllowed() || !fields?.length) {
       return;
     }
+    uniquifyNewFieldNames(fields, existingFieldNames(recordFormat));
     if (fields.length === 1) {
-      sendNewField(recordFormat, fields[0]);
+      vscode.postMessage({ command: `newField`, recordFormat, fieldInfo: fields[0] });
       return;
     }
     vscode.postMessage({ command: `newFields`, recordFormat, fields });
@@ -4698,6 +4959,7 @@
       let col = 2;
       const fields = [];
       const reffldSuffix = payload.library && payload.file ? ` ${payload.library}/${payload.file}` : ``;
+      const taken = new Set(existingFieldNames(lastSelectedFormat));
       for (const f of selected) {
         const usage = (
           /** @type {any} */
@@ -4728,8 +4990,10 @@
           });
           row += 1;
         }
+        const name = uniqueFieldName(f.name, taken);
+        taken.add(name);
         fields.push({
-          name: f.name.substring(0, 10),
+          name,
           type: `R`,
           isReference: true,
           reference: `${f.name}${reffldSuffix}`.trim(),
@@ -4763,7 +5027,7 @@
 
   // webui/src/main.js
   setIndicatorChangeHandler(() => refreshCanvas());
-  var LAYOUT_STORAGE_KEY = `mitchfiedler.dspfDesigner.layout`;
+  var LAYOUT_STORAGE_KEY = `mitchellfiedler.dspfDesigner.layout`;
   var MIN_SIDE_WIDTH = 180;
   var MAX_SIDE_WIDTH = 480;
   var MIN_BOTTOM_HEIGHT = 120;
@@ -4802,11 +5066,14 @@
       case `requestConfirmResult`:
         resolveHostDialog(event.data.requestId, event.data.confirmed === true);
         break;
+      case `requestSaveDiscardResult`:
+        resolveHostDialog(event.data.requestId, event.data.choice || `cancel`);
+        break;
       case `selectFormat`:
         selectRecordFormat(event.data.recordFormat);
         break;
       case `flushPendingEdits`:
-        flushPendingNudge();
+        flushPendingEdits();
         break;
     }
   });
@@ -4848,7 +5115,7 @@
       modeBtn.innerText = `Switch to Preview`;
       modeBtn.addEventListener(`click`, () => {
         const next = getEditorMode() === `design` ? `preview` : `design`;
-        setEditorMode(next);
+        void setEditorMode(next);
       });
     }
     const sizeSelect = document.getElementById(`screenSizeSelect`);

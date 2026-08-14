@@ -1,11 +1,11 @@
-import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, getEditorMode, setConnectionConnected, handleDatabaseFieldsResult, selectRecordFormat, flushPendingNudge } from "./renderer.js";
+import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, getEditorMode, setConnectionConnected, handleDatabaseFieldsResult, selectRecordFormat, flushPendingEdits } from "./renderer.js";
 import { setIndicatorChangeHandler } from "./indicators.js";
 import { resolveHostDialog } from "./hostDialogs.js";
 import { announce } from "./a11y.js";
 
 setIndicatorChangeHandler(() => refreshCanvas());
 
-const LAYOUT_STORAGE_KEY = `mitchfiedler.dspfDesigner.layout`;
+const LAYOUT_STORAGE_KEY = `mitchellfiedler.dspfDesigner.layout`;
 const MIN_SIDE_WIDTH = 180;
 const MAX_SIDE_WIDTH = 480;
 const MIN_BOTTOM_HEIGHT = 120;
@@ -48,11 +48,14 @@ window.addEventListener("message", (event) => {
     case `requestConfirmResult`:
       resolveHostDialog(event.data.requestId, event.data.confirmed === true);
       break;
+    case `requestSaveDiscardResult`:
+      resolveHostDialog(event.data.requestId, event.data.choice || `cancel`);
+      break;
     case `selectFormat`:
       selectRecordFormat(event.data.recordFormat);
       break;
     case `flushPendingEdits`:
-      flushPendingNudge();
+      flushPendingEdits();
       break;
   }
 });
@@ -100,10 +103,10 @@ function setupToolbar() {
   const modeBtn = document.getElementById(`modeToggle`);
   if (modeBtn) {
     modeBtn.innerText = `Switch to Preview`;
-    modeBtn.addEventListener(`click`, () => {
-      const next = getEditorMode() === `design` ? `preview` : `design`;
-      setEditorMode(next);
-    });
+      modeBtn.addEventListener(`click`, () => {
+        const next = getEditorMode() === `design` ? `preview` : `design`;
+        void setEditorMode(next);
+      });
   }
 
   const sizeSelect = document.getElementById(`screenSizeSelect`);

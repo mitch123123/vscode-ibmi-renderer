@@ -2,8 +2,8 @@
   "name": "dds-designer",
   "displayName": "IBM i DDS Designer",
   "description": "Visual designer for IBM i display and printer files (DDS). Fork of the Code for IBM i designer.",
-  "version": "0.2.1",
-  "publisher": "mitchfiedler",
+  "version": "0.2.2",
+  "publisher": "mitchellfiedler",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -40,13 +40,13 @@
   "activationEvents": [
     "onLanguage:dds.dspf",
     "onLanguage:dds.prtf",
-    "onCustomEditor:mitchfiedler.dspfDesigner"
+    "onCustomEditor:mitchellfiedler.dspfDesigner"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
       {
-        "viewType": "mitchfiedler.dspfDesigner",
+        "viewType": "mitchellfiedler.dspfDesigner",
         "displayName": "IBM i DDS Designer",
         "selector": [
           {
@@ -79,25 +79,25 @@
     ],
     "commands": [
       {
-        "command": "mitchfiedler.ddsDesigner.launchRenderer",
+        "command": "mitchellfiedler.ddsDesigner.launchRenderer",
         "title": "Edit / Preview (IBM i DDS)",
         "category": "IBM i DDS",
         "icon": "$(edit)"
       },
       {
-        "command": "mitchfiedler.ddsDesigner.editRecordFormat",
+        "command": "mitchellfiedler.ddsDesigner.editRecordFormat",
         "title": "Edit Record Format (IBM i DDS)",
         "category": "IBM i DDS",
         "icon": "$(edit)"
       },
       {
-        "command": "mitchfiedler.ddsDesigner.showSource",
+        "command": "mitchellfiedler.ddsDesigner.showSource",
         "title": "Open DDS Source Beside",
         "category": "IBM i DDS",
         "icon": "$(file-code)"
       },
       {
-        "command": "mitchfiedler.ddsDesigner.toggleEditorView",
+        "command": "mitchellfiedler.ddsDesigner.toggleEditorView",
         "title": "Focus Other DDS Editor",
         "category": "IBM i DDS",
         "icon": "$(arrow-swap)"
@@ -106,68 +106,68 @@
     "menus": {
       "editor/title": [
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
-          "when": "activeCustomEditorId != mitchfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
+          "when": "activeCustomEditorId != mitchellfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
           "group": "navigation@1"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.showSource",
-          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner",
+          "command": "mitchellfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchellfiedler.dspfDesigner",
           "group": "navigation@0"
         }
       ],
       "editor/context": [
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
-          "when": "activeCustomEditorId != mitchfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
+          "when": "activeCustomEditorId != mitchellfiedler.dspfDesigner && activeCustomEditorId != ibmi.dspfDesigner && (editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/)",
           "group": "navigation@1"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.showSource",
-          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner",
+          "command": "mitchellfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchellfiedler.dspfDesigner",
           "group": "navigation@0"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.toggleEditorView",
-          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
+          "command": "mitchellfiedler.ddsDesigner.toggleEditorView",
+          "when": "activeCustomEditorId == mitchellfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
           "group": "navigation@2"
         }
       ],
       "explorer/context": [
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
           "when": "resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/",
           "group": "navigation@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
           "when": "view == objectBrowser && viewItem == member",
           "group": "displayfile@1"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
           "when": "view == ifsBrowser && viewItem == streamfile",
           "group": "displayfile@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "mitchfiedler.ddsDesigner.launchRenderer",
+          "command": "mitchellfiedler.ddsDesigner.launchRenderer",
           "when": "editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.editRecordFormat",
+          "command": "mitchellfiedler.ddsDesigner.editRecordFormat",
           "when": "false"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.showSource",
-          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner"
+          "command": "mitchellfiedler.ddsDesigner.showSource",
+          "when": "activeCustomEditorId == mitchellfiedler.dspfDesigner"
         },
         {
-          "command": "mitchfiedler.ddsDesigner.toggleEditorView",
-          "when": "activeCustomEditorId == mitchfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
+          "command": "mitchellfiedler.ddsDesigner.toggleEditorView",
+          "when": "activeCustomEditorId == mitchellfiedler.dspfDesigner || editorLangId == dds.dspf || editorLangId == dds.prtf || resourceExtname =~ /\\.(dspf|prtf|dspf38|prtf38|DSPF|PRTF|DSPF38|PRTF38)$/"
         }
       ]
     }

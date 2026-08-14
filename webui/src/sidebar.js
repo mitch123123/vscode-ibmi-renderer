@@ -2,13 +2,27 @@
 /** @typedef {import('../../src/shared/dspf-types').Keyword} Keyword */
 /** @typedef {import('../../src/shared/dspf-types').RecordInfoData} RecordInfo */
 
-import { createKeywordPanel, createValuesPanel, renderSections, clearKeywordEditor } from "./keywordEditor.js";
+import {
+  createKeywordPanel,
+  createValuesPanel,
+  renderSections,
+  clearKeywordEditor,
+  getKeywordPanelApi,
+  isKeywordEditorOpen,
+  tryCommitKeywordEditor,
+} from "./keywordEditor.js";
 import { renderPalette } from "./palette.js";
 import { renderIndicatorPanel } from "./indicators.js";
 import { showHostError } from "./hostDialogs.js";
 import { stripKeywordsForTypeChange } from "./fieldTypeKeywords.js";
 import { fieldPropertyConstraints } from "./propInputLimits.js";
 import { formatOverlapWarning, validateFieldScreenFit } from "./coords.js";
+import { clearFieldEditController, setFieldEditController } from "./fieldEditGuard.js";
+import {
+  propValuesChanged,
+  readPropValuesFromElement,
+  snapshotPropValues,
+} from "./fieldEditState.js";
 import {
   isValidFieldName,
   isValidRecordName,
@@ -397,6 +411,7 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
  * }} [opts]
  */
 export function showFieldPalette(onCreate, opts) {
+  clearFieldEditController();
   clearKeywordEditor();
   const sidebar = document.getElementById(`fieldInfoSidebar`);
   renderPalette(sidebar, onCreate, opts);
@@ -618,15 +633,54 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts =
     });
   }
 
+  const originalProps = snapshotPropValues(properties);
+
+  /**
+   * @param {Record<string, string>} newProps
+   * @param {Keyword[]|undefined} keywords
+   * @returns {boolean}
+   */
+  const commitField = (newProps, keywords) => {
+    const result = normalizeFieldProps(fieldInfo, newProps);
+    if (!result.ok) {
+      showHostError(result.error);
+      return false;
+    }
+    if (opts.bounds) {
+      const fitError = validateFieldScreenFit(result.field, opts.bounds);
+      if (fitError) {
+        showHostError(fitError);
+        return false;
+      }
+    }
+    const next = keywords ? { ...result.field, keywords } : result.field;
+    clearFieldEditController();
+    onUpdate(next);
+    return true;
+  };
+
   const keywordsHost = document.createElement(`div`);
   keywordsHost.className = `keywords-section`;
   if (opts.generalTools) {
     keywordsHost.appendChild(opts.generalTools);
   }
-  keywordsHost.appendChild(
-    createKeywordPanel(`keywords-${fieldInfo.name || `field`}`, fieldInfo.keywords || [], (keywords) => {
-      onUpdate({ ...fieldInfo, keywords });
-    }, `field`)
+  const keywordPanel = createKeywordPanel(
+    `keywords-${fieldInfo.name || `field`}`,
+    fieldInfo.keywords || [],
+    (keywords) => {
+      commitField(readPropValuesFromElement(valuesPanel), keywords);
+    },
+    `field`
+  );
+  keywordsHost.appendChild(keywordPanel);
+
+  const valuesPanel = createValuesPanel(
+    `properties-${fieldInfo.name || `field`}`,
+    properties,
+    (newProps) => {
+      const kwApi = getKeywordPanelApi(keywordPanel);
+      commitField(newProps, kwApi?.getKeywords());
+    }
   );
 
   /** @type {{title: string, html: string|Element, open?: boolean}[]} */
@@ -634,21 +688,7 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts =
     {
       title: `Properties`,
       open: true,
-      html: createValuesPanel(`properties-${fieldInfo.name || `field`}`, properties, (newProps) => {
-        const result = normalizeFieldProps(fieldInfo, newProps);
-        if (!result.ok) {
-          showHostError(result.error);
-          return;
-        }
-        if (opts.bounds) {
-          const fitError = validateFieldScreenFit(result.field, opts.bounds);
-          if (fitError) {
-            showHostError(fitError);
-            return;
-          }
-        }
-        onUpdate(result.field);
-      }),
+      html: valuesPanel,
     },
     {
       title: `Keywords`,
@@ -658,6 +698,23 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts =
   ];
 
   renderSections(sidebar, sections);
+
+  setFieldEditController({
+    fieldName: fieldInfo.name,
+    isDirty: () => {
+      const propsDirty = propValuesChanged(originalProps, readPropValuesFromElement(valuesPanel));
+      const kwApi = getKeywordPanelApi(keywordPanel);
+      const keywordsDirty = kwApi?.isDirty() === true;
+      return propsDirty || keywordsDirty || isKeywordEditorOpen();
+    },
+    apply: () => {
+      if (!tryCommitKeywordEditor()) {
+        return false;
+      }
+      const kwApi = getKeywordPanelApi(keywordPanel);
+      return commitField(readPropValuesFromElement(valuesPanel), kwApi?.getKeywords());
+    },
+  });
 
   const overlapMsg = formatOverlapWarning(fieldInfo, opts.peerFields);
   if (overlapMsg) {
@@ -672,6 +729,9 @@ export function updateSelectedFieldSidebar(fieldInfo, onUpdate, onDelete, opts =
   deleteButton.setAttribute(`secondary`, `true`);
   deleteButton.className = `panel-delete-btn`;
   deleteButton.innerText = `Delete`;
-  deleteButton.addEventListener(`click`, onDelete);
+  deleteButton.addEventListener(`click`, () => {
+    clearFieldEditController();
+    onDelete();
+  });
   sidebar.appendChild(deleteButton);
 }
