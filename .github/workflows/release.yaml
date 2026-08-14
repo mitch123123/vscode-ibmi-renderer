@@ -1,10 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: marketplace-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -13,36 +18,74 @@ jobs:
   release:
     name: Package and publish
     runs-on: ubuntu-latest
+    if: >
+      github.repository == 'mitch123123/vscode-ibmi-renderer' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push'))
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Read package version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already tagged
+        id: gate
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}"; then
+            echo "Version v${VERSION} is already released. Bump package.json version in a PR to publish again."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip == 'false'
         with:
           node-version: 20
           cache: npm
+
       - run: npm ci
+        if: steps.gate.outputs.skip == 'false'
+
       - run: npm run vsix
-      - name: Upload VSIX to GitHub Release
+        if: steps.gate.outputs.skip == 'false'
+
+      - name: GitHub Release
+        if: steps.gate.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
           files: dds-designer.vsix
           generate_release_notes: true
+          target_commitish: ${{ github.event.workflow_run.head_sha || github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to VS Code Marketplace
+        if: steps.gate.outputs.skip == 'false'
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           if [ -z "$VSCE_PAT" ]; then
-            echo "VSCE_PAT not configured; skipping VS Marketplace publish."
-            exit 0
+            echo "::error::Add repository secret VSCE_PAT (Azure DevOps PAT with Marketplace → Manage for publisher mitchfiedler)."
+            exit 1
           fi
           npx --yes @vscode/vsce publish --packagePath dds-designer.vsix
+
       - name: Publish to Open VSX
+        if: steps.gate.outputs.skip == 'false'
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           if [ -z "$OVSX_PAT" ]; then
-            echo "OVSX_PAT not configured; skipping Open VSX publish."
+            echo "OVSX_PAT not configured; skipping Open VSX (Cursor) publish."
             exit 0
           fi
           npx --yes ovsx publish dds-designer.vsix -p "$OVSX_PAT"
