@@ -167,46 +167,34 @@
       onChange();
     }
   }
+  function syncChip(chip, indicator, on) {
+    chip.classList.toggle(`active`, on);
+    chip.setAttribute(`aria-pressed`, on ? `true` : `false`);
+    chip.title = `Indicator ${String(indicator).padStart(2, `0`)}`;
+  }
   function renderIndicatorPanel(container) {
     container.innerHTML = ``;
-    const title = document.createElement(`div`);
-    title.style.padding = `0.5em`;
-    title.style.fontWeight = `bold`;
-    title.innerText = `Indicators`;
-    container.appendChild(title);
     const grid = document.createElement(`div`);
     grid.className = `indicator-grid`;
-    grid.style.display = `grid`;
-    grid.style.gridTemplateColumns = `repeat(5, 1fr)`;
-    grid.style.gap = `2px`;
-    grid.style.padding = `0.5em`;
-    grid.style.maxHeight = `200px`;
-    grid.style.overflowY = `auto`;
     for (let i = 1; i <= 99; i++) {
-      const label = document.createElement(`label`);
-      label.style.fontSize = `11px`;
-      label.style.display = `flex`;
-      label.style.alignItems = `center`;
-      label.style.gap = `2px`;
-      label.title = `Indicator ${i}`;
-      const cb = document.createElement(`input`);
-      cb.type = `checkbox`;
-      cb.checked = activeIndicators.has(i);
-      cb.addEventListener(`change`, () => {
-        setIndicator(i, cb.checked);
+      const chip = document.createElement(`button`);
+      chip.type = `button`;
+      chip.className = `indicator-chip`;
+      chip.textContent = String(i).padStart(2, `0`);
+      const on = activeIndicators.has(i);
+      syncChip(chip, i, on);
+      chip.addEventListener(`click`, () => {
+        const next = !activeIndicators.has(i);
+        setIndicator(i, next);
+        syncChip(chip, i, next);
       });
-      const span = document.createElement(`span`);
-      span.innerText = String(i).padStart(2, `0`);
-      label.appendChild(cb);
-      label.appendChild(span);
-      grid.appendChild(label);
+      grid.appendChild(chip);
     }
     container.appendChild(grid);
     const clearBtn = document.createElement(`vscode-button`);
     clearBtn.setAttribute(`secondary`, `true`);
+    clearBtn.className = `indicator-clear`;
     clearBtn.innerText = `Clear all`;
-    clearBtn.style.margin = `0.5em`;
-    clearBtn.style.display = `block`;
     clearBtn.addEventListener(`click`, () => {
       activeIndicators = /* @__PURE__ */ new Set();
       renderIndicatorPanel(container);
@@ -730,8 +718,7 @@
       const newKeyword = document.createElement(`vscode-button`);
       newKeyword.setAttribute(`icon`, `add`);
       newKeyword.innerText = `New Keyword`;
-      newKeyword.style.margin = `1em`;
-      newKeyword.style.display = `block`;
+      newKeyword.className = `keyword-action-btn`;
       newKeyword.addEventListener(`click`, () => {
         editKeyword((kw) => {
           keywords.push(kw);
@@ -741,19 +728,9 @@
       });
       conflictWarning = document.createElement(`div`);
       conflictWarning.className = `keyword-conflict-warning`;
-      conflictWarning.style.display = `none`;
-      conflictWarning.style.margin = `0 1em`;
-      conflictWarning.style.padding = `0.5em 0.75em`;
-      conflictWarning.style.fontSize = `12px`;
-      conflictWarning.style.lineHeight = `1.35`;
-      conflictWarning.style.border = `1px solid var(--vscode-inputValidation-warningBorder, #cca700)`;
-      conflictWarning.style.background = `var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.15))`;
-      conflictWarning.style.color = `var(--vscode-inputValidation-warningForeground, inherit)`;
-      conflictWarning.style.borderRadius = `2px`;
       const updateButton = document.createElement(`vscode-button`);
       updateButton.innerText = `Update`;
-      updateButton.style.margin = `1em`;
-      updateButton.style.display = `block`;
+      updateButton.className = `keyword-action-btn`;
       updateButton.addEventListener(`click`, () => {
         refreshConflictWarnings();
         onUpdate(keywords);
@@ -877,8 +854,7 @@
     if (hasEditableData) {
       const updateButton = document.createElement(`vscode-button`);
       updateButton.innerText = `Update`;
-      updateButton.style.margin = `1em`;
-      updateButton.style.display = `block`;
+      updateButton.className = `keyword-action-btn`;
       updateButton.addEventListener(`click`, () => {
         onUpdate(readPropValuesFromElement(section));
       });
@@ -926,13 +902,11 @@
     const group = document.createElement(`vscode-form-group`);
     group.id = `currentKeywordEditor`;
     group.setAttribute(`variant`, `vertical`);
-    group.style.paddingLeft = `1em`;
-    group.style.paddingRight = `1em`;
+    group.className = `keyword-form-group`;
     const createLabel = (label, forId) => {
       const labelElement = document.createElement(`vscode-label`);
       labelElement.setAttribute(`for`, forId);
       labelElement.innerText = label;
-      labelElement.style.marginTop = `0.5em`;
       return labelElement;
     };
     const createTextField = (id, value, placeholder) => {
@@ -1035,9 +1009,6 @@
     group.appendChild(nameInput);
     const help = document.createElement(`div`);
     help.className = `keyword-help`;
-    help.style.fontSize = `11px`;
-    help.style.opacity = `0.75`;
-    help.style.marginTop = `0.25em`;
     group.appendChild(help);
     const valueHost = document.createElement(`div`);
     valueHost.id = `keywordValueHost`;
@@ -1052,9 +1023,7 @@
           valueHost.appendChild(createTextField(`value`, currentValue || ``, `parameter(s)`));
         } else {
           const none = document.createElement(`div`);
-          none.style.fontSize = `12px`;
-          none.style.opacity = `0.7`;
-          none.style.marginTop = `0.5em`;
+          none.className = `keyword-none`;
           none.textContent = `This keyword takes no parameters.`;
           valueHost.appendChild(none);
           const hidden = createTextField(`value`, ``);
@@ -1172,8 +1141,7 @@
     group.appendChild(createCheckbox(`neg3`, `Negate`, keyword ? keyword.conditions?.[2]?.negate : void 0));
     const button = document.createElement(`vscode-button`);
     button.setAttribute(`icon`, `check`);
-    button.style.marginTop = `1em`;
-    button.style.display = `block`;
+    button.className = `keyword-action-btn`;
     button.innerText = `Confirm`;
     const commitKeyword = () => {
       const nameEl = group.querySelector(`#keyword`);
@@ -1532,8 +1500,6 @@
     if (placeholder) {
       input.setAttribute(`placeholder`, placeholder);
     }
-    input.style.width = `100%`;
-    input.style.marginBottom = `0.5em`;
     parent.appendChild(input);
     return input;
   }
@@ -1547,6 +1513,8 @@
     const onCreateRecord = opts.onCreateRecord;
     appendHeading(sidebar, `Add field`);
     appendHint(sidebar, `Drag onto the screen or click to add at 1,1`);
+    const grid = document.createElement(`div`);
+    grid.className = `palette-grid`;
     for (const item of paletteItems) {
       const button = document.createElement(`vscode-button`);
       button.setAttribute(`secondary`, `true`);
@@ -1565,14 +1533,15 @@
         draggingField = void 0;
       });
       button.onclick = () => onClickCreate(item.field());
-      sidebar.appendChild(button);
+      grid.appendChild(button);
     }
+    sidebar.appendChild(grid);
     if (!onCreateRecord) {
       return;
     }
     if (opts.onBrowseDatabase) {
       const dbDivider = document.createElement(`vscode-divider`);
-      dbDivider.style.margin = `0.75em 0`;
+      dbDivider.className = `palette-divider`;
       sidebar.appendChild(dbDivider);
       appendHeading(sidebar, `Database fields`);
       appendHint(sidebar, `Browse a PF/LF via Code for IBM i and place REFFLD fields (SDA F10).`);
@@ -1585,7 +1554,7 @@
       sidebar.appendChild(dbBtn);
     }
     const divider = document.createElement(`vscode-divider`);
-    divider.style.margin = `0.75em 0`;
+    divider.className = `palette-divider`;
     sidebar.appendChild(divider);
     appendHeading(sidebar, `Add record`);
     appendHint(
@@ -2339,6 +2308,18 @@
     apply.innerText = label;
     return apply;
   }
+  function syncFieldListSelection(names) {
+    const selected = new Set((names || []).filter(Boolean).map((n) => String(n)));
+    document.querySelectorAll(`.field-list-item[data-field-name]`).forEach((el) => {
+      const on = selected.has(el.dataset.fieldName || ``);
+      el.classList.toggle(`selected`, on);
+      if (on) {
+        el.setAttribute(`aria-current`, `true`);
+      } else {
+        el.removeAttribute(`aria-current`);
+      }
+    });
+  }
   function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, overlayFormats2, onFormatUpdate, onOverlayChange, onFileUpdate, onSelectField) {
     const sidebar = document.getElementById(`recordFormatSidebar`);
     let sections = [];
@@ -2497,6 +2478,9 @@
         const row = document.createElement(`button`);
         row.type = `button`;
         row.className = `field-list-item`;
+        if (f.name) {
+          row.dataset.fieldName = f.name;
+        }
         const usage = f.displayType || ``;
         row.textContent = `${f.name || `(const)`}  r${f.position?.y ?? `?`} c${f.position?.x ?? `?`}  ${usage}  len ${f.length ?? 0}`;
         row.title = row.textContent;
@@ -2886,14 +2870,7 @@
     if (opts.selectFormat) {
       lastSelectedFormat = opts.selectFormat;
       editorMode = `design`;
-      const badge = document.getElementById(`modeBadge`);
-      if (badge) {
-        badge.innerText = `Design`;
-      }
-      const modeBtn = document.getElementById(`modeToggle`);
-      if (modeBtn) {
-        modeBtn.innerText = `Switch to Preview`;
-      }
+      syncModeChrome(`design`);
     }
     if (withRerender) {
       if (opts.restoreSelection) {
@@ -2907,8 +2884,18 @@
       }
     }
   }
-  function getEditorMode() {
-    return editorMode;
+  function syncModeChrome(mode) {
+    const designBtn = document.getElementById(`modeDesign`);
+    const previewBtn = document.getElementById(`modePreview`);
+    const isPreview = mode === `preview`;
+    if (designBtn) {
+      designBtn.classList.toggle(`active`, !isPreview);
+      designBtn.setAttribute(`aria-pressed`, !isPreview ? `true` : `false`);
+    }
+    if (previewBtn) {
+      previewBtn.classList.toggle(`active`, isPreview);
+      previewBtn.setAttribute(`aria-pressed`, isPreview ? `true` : `false`);
+    }
   }
   function setConnectionConnected(connected) {
     connectionConnected = !!connected;
@@ -2932,14 +2919,7 @@
       return;
     }
     editorMode = mode;
-    const badge = document.getElementById(`modeBadge`);
-    if (badge) {
-      badge.innerText = mode === `preview` ? `Preview` : `Design`;
-    }
-    const modeBtn = document.getElementById(`modeToggle`);
-    if (modeBtn) {
-      modeBtn.innerText = mode === `preview` ? `Switch to Design` : `Switch to Preview`;
-    }
+    syncModeChrome(mode);
     if (lastSelectedFormat) {
       setWindowForFormat(lastSelectedFormat);
     }
@@ -2959,14 +2939,7 @@
       return;
     }
     editorMode = `design`;
-    const badge = document.getElementById(`modeBadge`);
-    if (badge) {
-      badge.innerText = `Design`;
-    }
-    const modeBtn = document.getElementById(`modeToggle`);
-    if (modeBtn) {
-      modeBtn.innerText = `Switch to Preview`;
-    }
+    syncModeChrome(`design`);
     if (name === lastSelectedFormat) {
       setWindowForFormat(name);
       return;
@@ -3294,7 +3267,7 @@
         const col = Math.floor((pos.x - RULER_LEFT) / pxwPerChar) + 1;
         const row = Math.floor((pos.y - RULER_TOP) / pxhPerLine) + 1;
         if (col >= 1 && col <= renderCols && row >= 1 && row <= renderRows) {
-          badge.innerText = `Row ${row}, Col ${col}`;
+          badge.innerText = `Row ${row} \xB7 Col ${col}`;
         } else {
           badge.innerText = ``;
         }
@@ -3358,13 +3331,14 @@
       } else {
         const sidebar = document.getElementById(`fieldInfoSidebar`);
         if (sidebar) {
-          sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
+          sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
         }
       }
     }
     if (formatChanged) {
       announce(`Format ${chosenFormat}`);
     }
+    syncFieldListSelection(selectedItems.map((s) => s.field.name).filter(Boolean));
   }
   function drawRulers(layer, cols, rows) {
     const totalW = widthInP(cols) + RULER_LEFT;
@@ -4066,6 +4040,7 @@
         sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
       }
     }
+    syncFieldListSelection(selectedItems.map((s) => s.field.name).filter(Boolean));
   }
   function updateMultiSelectSidebar() {
     clearFieldEditController();
@@ -4884,7 +4859,7 @@
     if (!editsAllowed()) {
       const sidebar = document.getElementById(`fieldInfoSidebar`);
       if (sidebar) {
-        sidebar.innerHTML = connectionConnected ? `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>` : `<div style="padding:1em;opacity:0.7">Disconnected \u2014 editing unavailable</div>`;
+        sidebar.innerHTML = connectionConnected ? `<div class="panel-empty">Preview mode (read-only)</div>` : `<div class="panel-empty">Disconnected \u2014 editing unavailable</div>`;
       }
       return;
     }
@@ -4939,9 +4914,7 @@
     hint.innerText = `${payload.library}/${payload.file} \u2014 select fields, usage, and heading placement.`;
     sidebar.appendChild(hint);
     const usageSelect = document.createElement(`select`);
-    usageSelect.className = `prop-select`;
-    usageSelect.style.margin = `0.5em 1em`;
-    usageSelect.style.width = `calc(100% - 2em)`;
+    usageSelect.className = `prop-select db-field-selects`;
     for (const [v, l] of [[`both`, `Both (B)`], [`input`, `Input (I)`], [`output`, `Output (O)`]]) {
       const o = document.createElement(`option`);
       o.value = v;
@@ -4950,9 +4923,7 @@
     }
     sidebar.appendChild(usageSelect);
     const placeSelect = document.createElement(`select`);
-    placeSelect.className = `prop-select`;
-    placeSelect.style.margin = `0 1em 0.5em`;
-    placeSelect.style.width = `calc(100% - 2em)`;
+    placeSelect.className = `prop-select db-field-selects`;
     for (const [v, l] of [
       [`none`, `Field only`],
       [`left`, `Heading left (SDA &L)`],
@@ -5163,14 +5134,12 @@
     });
   }
   function setupToolbar() {
-    const modeBtn = document.getElementById(`modeToggle`);
-    if (modeBtn) {
-      modeBtn.innerText = `Switch to Preview`;
-      modeBtn.addEventListener(`click`, () => {
-        const next = getEditorMode() === `design` ? `preview` : `design`;
-        void setEditorMode(next);
-      });
-    }
+    document.getElementById(`modeDesign`)?.addEventListener(`click`, () => {
+      void setEditorMode(`design`);
+    });
+    document.getElementById(`modePreview`)?.addEventListener(`click`, () => {
+      void setEditorMode(`preview`);
+    });
     const sizeSelect = document.getElementById(`screenSizeSelect`);
     if (sizeSelect) {
       sizeSelect.addEventListener(`change`, () => {

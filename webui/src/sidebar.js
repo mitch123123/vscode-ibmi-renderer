@@ -158,6 +158,23 @@ function propApplyButton(label) {
 }
 
 /**
+ * Highlight field-list rows that match the current canvas selection.
+ * @param {string[]} names
+ */
+export function syncFieldListSelection(names) {
+  const selected = new Set((names || []).filter(Boolean).map((n) => String(n)));
+  document.querySelectorAll(`.field-list-item[data-field-name]`).forEach((el) => {
+    const on = selected.has(el.dataset.fieldName || ``);
+    el.classList.toggle(`selected`, on);
+    if (on) {
+      el.setAttribute(`aria-current`, `true`);
+    } else {
+      el.removeAttribute(`aria-current`);
+    }
+  });
+}
+
+/**
  * @param {RecordInfo} recordInfo
  * @param {RecordInfo|undefined} globalInfo
  * @param {RecordInfo[]} allFormats
@@ -347,6 +364,9 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
       const row = document.createElement(`button`);
       row.type = `button`;
       row.className = `field-list-item`;
+      if (f.name) {
+        row.dataset.fieldName = f.name;
+      }
       const usage = f.displayType || ``;
       row.textContent = `${f.name || `(const)`}  r${f.position?.y ?? `?`} c${f.position?.x ?? `?`}  ${usage}  len ${f.length ?? 0}`;
       row.title = row.textContent;

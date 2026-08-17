@@ -15,7 +15,7 @@ import {
 import { formatEditCode } from "./editcode.js";
 import { activeIndicators, clearAllIndicators } from "./indicators.js";
 import { clearKeywordEditor, liveFormatKeywords, renderSections } from "./keywordEditor.js";
-import { updateRecordFormatSidebar, updateSelectedFieldSidebar, showFieldPalette } from "./sidebar.js";
+import { updateRecordFormatSidebar, updateSelectedFieldSidebar, showFieldPalette, syncFieldListSelection } from "./sidebar.js";
 import { getDraggingField, clearDraggingField, isValidRecordName } from "./palette.js";
 import { requestHostInput, requestHostConfirm, showHostError } from "./hostDialogs.js";
 import {
@@ -125,14 +125,7 @@ export function loadDDS(newDoc, type, withRerender = true, opts = {}) {
   if (opts.selectFormat) {
     lastSelectedFormat = opts.selectFormat;
     editorMode = `design`;
-    const badge = document.getElementById(`modeBadge`);
-    if (badge) {
-      badge.innerText = `Design`;
-    }
-    const modeBtn = document.getElementById(`modeToggle`);
-    if (modeBtn) {
-      modeBtn.innerText = `Switch to Preview`;
-    }
+    syncModeChrome(`design`);
   }
 
   if (withRerender) {
@@ -160,6 +153,24 @@ export function getEditorMode() {
   return editorMode;
 }
 
+/**
+ * Keep the Design | Preview segmented control in sync with editorMode.
+ * @param {"design"|"preview"} mode
+ */
+function syncModeChrome(mode) {
+  const designBtn = document.getElementById(`modeDesign`);
+  const previewBtn = document.getElementById(`modePreview`);
+  const isPreview = mode === `preview`;
+  if (designBtn) {
+    designBtn.classList.toggle(`active`, !isPreview);
+    designBtn.setAttribute(`aria-pressed`, !isPreview ? `true` : `false`);
+  }
+  if (previewBtn) {
+    previewBtn.classList.toggle(`active`, isPreview);
+    previewBtn.setAttribute(`aria-pressed`, isPreview ? `true` : `false`);
+  }
+}
+
 export function setConnectionConnected(connected) {
   connectionConnected = !!connected;
   document.body.classList.toggle(`disconnected`, !connectionConnected);
@@ -184,14 +195,7 @@ export async function setEditorMode(mode) {
     return;
   }
   editorMode = mode;
-  const badge = document.getElementById(`modeBadge`);
-  if (badge) {
-    badge.innerText = mode === `preview` ? `Preview` : `Design`;
-  }
-  const modeBtn = document.getElementById(`modeToggle`);
-  if (modeBtn) {
-    modeBtn.innerText = mode === `preview` ? `Switch to Design` : `Switch to Preview`;
-  }
+  syncModeChrome(mode);
   if (lastSelectedFormat) {
     setWindowForFormat(lastSelectedFormat);
   }
@@ -218,14 +222,7 @@ export async function selectRecordFormat(formatName) {
   }
 
   editorMode = `design`;
-  const badge = document.getElementById(`modeBadge`);
-  if (badge) {
-    badge.innerText = `Design`;
-  }
-  const modeBtn = document.getElementById(`modeToggle`);
-  if (modeBtn) {
-    modeBtn.innerText = `Switch to Preview`;
-  }
+  syncModeChrome(`design`);
 
   if (name === lastSelectedFormat) {
     setWindowForFormat(name);
@@ -613,7 +610,7 @@ export function setWindowForFormat(chosenFormat, opts = {}) {
       const col = Math.floor((pos.x - RULER_LEFT) / pxwPerChar) + 1;
       const row = Math.floor((pos.y - RULER_TOP) / pxhPerLine) + 1;
       if (col >= 1 && col <= renderCols && row >= 1 && row <= renderRows) {
-        badge.innerText = `Row ${row}, Col ${col}`;
+        badge.innerText = `Row ${row} · Col ${col}`;
       } else {
         badge.innerText = ``;
       }
@@ -683,7 +680,7 @@ export function setWindowForFormat(chosenFormat, opts = {}) {
     } else {
       const sidebar = document.getElementById(`fieldInfoSidebar`);
       if (sidebar) {
-        sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
+        sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
       }
     }
   }
@@ -691,6 +688,7 @@ export function setWindowForFormat(chosenFormat, opts = {}) {
   if (formatChanged) {
     announce(`Format ${chosenFormat}`);
   }
+  syncFieldListSelection(selectedItems.map((s) => s.field.name).filter(Boolean));
 }
 
 /**
@@ -1535,6 +1533,7 @@ function updateSelectionUi(opts = {}) {
       sidebar.innerHTML = `<div class="panel-empty">Preview mode (read-only)</div>`;
     }
   }
+  syncFieldListSelection(selectedItems.map((s) => s.field.name).filter(Boolean));
 }
 
 /**
@@ -2490,8 +2489,8 @@ function openDesignPalette() {
     const sidebar = document.getElementById(`fieldInfoSidebar`);
     if (sidebar) {
       sidebar.innerHTML = connectionConnected
-        ? `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`
-        : `<div style="padding:1em;opacity:0.7">Disconnected — editing unavailable</div>`;
+        ? `<div class="panel-empty">Preview mode (read-only)</div>`
+        : `<div class="panel-empty">Disconnected — editing unavailable</div>`;
     }
     return;
   }
@@ -2562,9 +2561,7 @@ export function handleDatabaseFieldsResult(payload) {
   sidebar.appendChild(hint);
 
   const usageSelect = document.createElement(`select`);
-  usageSelect.className = `prop-select`;
-  usageSelect.style.margin = `0.5em 1em`;
-  usageSelect.style.width = `calc(100% - 2em)`;
+  usageSelect.className = `prop-select db-field-selects`;
   for (const [v, l] of [[`both`, `Both (B)`], [`input`, `Input (I)`], [`output`, `Output (O)`]]) {
     const o = document.createElement(`option`);
     o.value = v;
@@ -2574,9 +2571,7 @@ export function handleDatabaseFieldsResult(payload) {
   sidebar.appendChild(usageSelect);
 
   const placeSelect = document.createElement(`select`);
-  placeSelect.className = `prop-select`;
-  placeSelect.style.margin = `0 1em 0.5em`;
-  placeSelect.style.width = `calc(100% - 2em)`;
+  placeSelect.className = `prop-select db-field-selects`;
   for (const [v, l] of [
     [`none`, `Field only`],
     [`left`, `Heading left (SDA &L)`],

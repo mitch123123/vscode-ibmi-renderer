@@ -1,4 +1,4 @@
-import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, getEditorMode, setConnectionConnected, handleDatabaseFieldsResult, selectRecordFormat, flushPendingEdits } from "./renderer.js";
+import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, setConnectionConnected, handleDatabaseFieldsResult, selectRecordFormat, flushPendingEdits } from "./renderer.js";
 import { setIndicatorChangeHandler } from "./indicators.js";
 import { resolveHostDialog } from "./hostDialogs.js";
 import { clearFieldEditController } from "./fieldEditGuard.js";
@@ -111,14 +111,12 @@ function setupSidebarToggles() {
 }
 
 function setupToolbar() {
-  const modeBtn = document.getElementById(`modeToggle`);
-  if (modeBtn) {
-    modeBtn.innerText = `Switch to Preview`;
-      modeBtn.addEventListener(`click`, () => {
-        const next = getEditorMode() === `design` ? `preview` : `design`;
-        void setEditorMode(next);
-      });
-  }
+  document.getElementById(`modeDesign`)?.addEventListener(`click`, () => {
+    void setEditorMode(`design`);
+  });
+  document.getElementById(`modePreview`)?.addEventListener(`click`, () => {
+    void setEditorMode(`preview`);
+  });
 
   const sizeSelect = document.getElementById(`screenSizeSelect`);
   if (sizeSelect) {

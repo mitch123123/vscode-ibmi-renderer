@@ -159,8 +159,7 @@ export function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`)
     const newKeyword = document.createElement(`vscode-button`);
     newKeyword.setAttribute(`icon`, `add`);
     newKeyword.innerText = `New Keyword`;
-    newKeyword.style.margin = `1em`;
-    newKeyword.style.display = `block`;
+    newKeyword.className = `keyword-action-btn`;
 
     newKeyword.addEventListener(`click`, () => {
       editKeyword((kw) => {
@@ -172,20 +171,10 @@ export function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`)
 
     conflictWarning = document.createElement(`div`);
     conflictWarning.className = `keyword-conflict-warning`;
-    conflictWarning.style.display = `none`;
-    conflictWarning.style.margin = `0 1em`;
-    conflictWarning.style.padding = `0.5em 0.75em`;
-    conflictWarning.style.fontSize = `12px`;
-    conflictWarning.style.lineHeight = `1.35`;
-    conflictWarning.style.border = `1px solid var(--vscode-inputValidation-warningBorder, #cca700)`;
-    conflictWarning.style.background = `var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.15))`;
-    conflictWarning.style.color = `var(--vscode-inputValidation-warningForeground, inherit)`;
-    conflictWarning.style.borderRadius = `2px`;
 
     const updateButton = document.createElement(`vscode-button`);
     updateButton.innerText = `Update`;
-    updateButton.style.margin = `1em`;
-    updateButton.style.display = `block`;
+    updateButton.className = `keyword-action-btn`;
     updateButton.addEventListener(`click`, () => {
       refreshConflictWarnings();
       onUpdate(keywords);
@@ -345,8 +334,7 @@ export function createValuesPanel(id, properties, onUpdate) {
   if (hasEditableData) {
     const updateButton = document.createElement(`vscode-button`);
     updateButton.innerText = `Update`;
-    updateButton.style.margin = `1em`;
-    updateButton.style.display = `block`;
+    updateButton.className = `keyword-action-btn`;
     updateButton.addEventListener(`click`, () => {
       onUpdate(readPropValuesFromElement(section));
     });
@@ -404,14 +392,12 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
   const group = document.createElement(`vscode-form-group`);
   group.id = `currentKeywordEditor`;
   group.setAttribute(`variant`, `vertical`);
-  group.style.paddingLeft = `1em`;
-  group.style.paddingRight = `1em`;
+  group.className = `keyword-form-group`;
 
   const createLabel = (label, forId) => {
     const labelElement = document.createElement(`vscode-label`);
     labelElement.setAttribute(`for`, forId);
     labelElement.innerText = label;
-    labelElement.style.marginTop = `0.5em`;
     return labelElement;
   };
 
@@ -531,9 +517,6 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
 
   const help = document.createElement(`div`);
   help.className = `keyword-help`;
-  help.style.fontSize = `11px`;
-  help.style.opacity = `0.75`;
-  help.style.marginTop = `0.25em`;
   group.appendChild(help);
 
   // —— Value host (rebuilt when keyword changes) ——
@@ -556,9 +539,7 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
         valueHost.appendChild(createTextField(`value`, currentValue || ``, `parameter(s)`));
       } else {
         const none = document.createElement(`div`);
-        none.style.fontSize = `12px`;
-        none.style.opacity = `0.7`;
-        none.style.marginTop = `0.5em`;
+        none.className = `keyword-none`;
         none.textContent = `This keyword takes no parameters.`;
         valueHost.appendChild(none);
         const hidden = createTextField(`value`, ``);
@@ -696,8 +677,7 @@ export function editKeyword(onUpdate, keyword, level = `field`) {
 
   const button = document.createElement(`vscode-button`);
   button.setAttribute(`icon`, `check`);
-  button.style.marginTop = `1em`;
-  button.style.display = `block`;
+  button.className = `keyword-action-btn`;
   button.innerText = `Confirm`;
   const commitKeyword = () => {
     /** @type {any} */
