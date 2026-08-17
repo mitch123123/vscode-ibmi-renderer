@@ -69,7 +69,7 @@ export function validateKeyword(keyword: Keyword | undefined): string | undefine
     if (keyword.value.length > KEYWORD_VALUE_MAX) {
       return `Keyword value exceeds ${KEYWORD_VALUE_MAX} characters.`;
     }
-    if (CONTROL_CHARS.test(keyword.value)) {
+    if (CONTROL_CHARS.test(keyword.value) || /[\n\r\t]/.test(keyword.value)) {
       return `Keyword value contains invalid characters.`;
     }
   }
@@ -106,9 +106,6 @@ export function validateConstValue(value: string | undefined): string | undefine
   }
   if (value.length > CONST_VALUE_MAX) {
     return `Constant value exceeds ${CONST_VALUE_MAX} characters.`;
-  }
-  if (value.includes(`'`)) {
-    return `Constant value cannot contain a single quote.`;
   }
   if (CONTROL_CHARS.test(value) || value.includes(`\n`) || value.includes(`\r`)) {
     return `Constant value contains invalid characters.`;
@@ -155,12 +152,12 @@ export function validateFieldEditPayload(field: Partial<FieldInfoData> | undefin
 
   if (field.position) {
     const { x, y } = field.position;
-    if (!Number.isInteger(x) || x < 1 || x > DDS_MAX_ROW_COL) {
-      return `Column must be an integer from 1 to ${DDS_MAX_ROW_COL}.`;
+    // x <= 0 / y <= 0 are valid (blank column/row: hidden, P/M, printer).
+    if (!Number.isInteger(x) || x > DDS_MAX_ROW_COL) {
+      return `Column must be an integer from 0 to ${DDS_MAX_ROW_COL} (0 = blank).`;
     }
-    // y === 0 is valid (printer-style blank row / relative positioning).
-    if (!Number.isInteger(y) || y < 0 || y > DDS_MAX_ROW_COL) {
-      return `Row must be an integer from 0 to ${DDS_MAX_ROW_COL}.`;
+    if (!Number.isInteger(y) || y > DDS_MAX_ROW_COL) {
+      return `Row must be an integer from 0 to ${DDS_MAX_ROW_COL} (0 = blank).`;
     }
   }
 
@@ -211,6 +208,12 @@ export function validateFormatKeywords(keywords: Keyword[] | undefined): string 
         if (!isValidRecordName(parts[0])) {
           return `WINDOW reference must be a valid record name. ${FIELD_NAME_HINT}`;
         }
+      } else if (parts.length === 3 && parts[0].toUpperCase() === `*DFT`) {
+        for (const p of parts.slice(1)) {
+          if (!/^\d+$/.test(p) || Number(p) < 1) {
+            return `WINDOW *DFT height and width must be positive integers.`;
+          }
+        }
       } else if (parts.length === 4) {
         for (const p of parts) {
           if (!/^\d+$/.test(p) || Number(p) < 1) {
@@ -218,7 +221,7 @@ export function validateFormatKeywords(keywords: Keyword[] | undefined): string 
           }
         }
       } else {
-        return `WINDOW must be four positive integers (row col height width) or a record-format name.`;
+        return `WINDOW must be four positive integers (row col height width), *DFT height width, or a record-format name.`;
       }
     }
   }

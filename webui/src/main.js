@@ -1,6 +1,7 @@
 import { loadDDS, setupTabsHandler, setupKeyboard, setEditorMode, setScreenSize, refreshCanvas, getEditorMode, setConnectionConnected, handleDatabaseFieldsResult, selectRecordFormat, flushPendingEdits } from "./renderer.js";
 import { setIndicatorChangeHandler } from "./indicators.js";
 import { resolveHostDialog } from "./hostDialogs.js";
+import { clearFieldEditController } from "./fieldEditGuard.js";
 import { announce } from "./a11y.js";
 
 setIndicatorChangeHandler(() => refreshCanvas());
@@ -41,6 +42,7 @@ window.addEventListener("message", (event) => {
       break;
     case `editFailed`:
       announce(event.data.reason || `Edit failed`);
+      clearFieldEditController();
       break;
     case `requestInputResult`:
       resolveHostDialog(event.data.requestId, event.data.value);
@@ -57,6 +59,15 @@ window.addEventListener("message", (event) => {
     case `flushPendingEdits`:
       flushPendingEdits();
       break;
+  }
+});
+
+window.addEventListener(`pagehide`, () => {
+  flushPendingEdits();
+});
+document.addEventListener(`visibilitychange`, () => {
+  if (document.visibilityState === `hidden`) {
+    flushPendingEdits();
   }
 });
 

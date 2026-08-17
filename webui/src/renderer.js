@@ -14,7 +14,7 @@ import {
 } from "./constants.js";
 import { formatEditCode } from "./editcode.js";
 import { activeIndicators, clearAllIndicators } from "./indicators.js";
-import { clearKeywordEditor, renderSections } from "./keywordEditor.js";
+import { clearKeywordEditor, liveFormatKeywords, renderSections } from "./keywordEditor.js";
 import { updateRecordFormatSidebar, updateSelectedFieldSidebar, showFieldPalette } from "./sidebar.js";
 import { getDraggingField, clearDraggingField, isValidRecordName } from "./palette.js";
 import { requestHostInput, requestHostConfirm, showHostError } from "./hostDialogs.js";
@@ -32,7 +32,6 @@ import {
   fieldContentLength,
   formatOverlapWarning,
   isSameFieldRef,
-  maxStartColumnForLength,
 } from "./coords.js";
 import { uniqueFieldName, uniquifyNewFieldNames } from "../../src/shared/recordName.ts";
 
@@ -144,7 +143,7 @@ export function loadDDS(newDoc, type, withRerender = true, opts = {}) {
     setTabs(validFormats.map(format => format.name), lastSelectedFormat);
     const chosenFormat = lastSelectedFormat || (validFormats[0] ? validFormats[0].name : undefined);
     if (chosenFormat) {
-      setWindowForFormat(chosenFormat);
+      setWindowForFormat(chosenFormat, { keepDirtyFieldEdits: opts.restoreSelection === true });
     }
   }
 }
@@ -307,9 +306,35 @@ function fieldPositionToPixels(pos) {
 }
 
 /**
- * @param {string} chosenFormat
+ * Clamp a Konva absolute position onto the current WINDOW/screen grid.
+ * @param {{ x: number, y: number }} boxPos
+ * @param {{ wasY0?: boolean, length?: number }} opts
  */
-export function setWindowForFormat(chosenFormat) {
+function clampAbsolutePositionToField(boxPos, opts = {}) {
+  const snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+  const screen = gridCordsToFieldCords(snapped.x, snapped.y);
+  let rawX = screen.x;
+  let rawY = screen.y;
+  if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
+    rawX = screen.x - (activeWindowOrigin.originX - 1);
+    rawY = screen.y - (activeWindowOrigin.originY - 1);
+  }
+  const bounds = currentPositionBounds();
+  const position = screenToFieldPosition(screen.x, screen.y, opts);
+  return {
+    position,
+    bounds,
+    rawX,
+    rawY,
+    pixels: fieldPositionToPixels(position),
+  };
+}
+
+/**
+ * @param {string} chosenFormat
+ * @param {{ keepDirtyFieldEdits?: boolean }} [opts]
+ */
+export function setWindowForFormat(chosenFormat, opts = {}) {
   let cols = 80;
   let rows = 24;
   const formatChanged = chosenFormat !== lastSelectedFormat;
@@ -447,6 +472,9 @@ export function setWindowForFormat(chosenFormat) {
       const groups = fieldLayer.find(`Group`);
       groups.forEach((g) => {
         if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+          return;
+        }
+        if (g.getAttr(`ddsOverlay`)) {
           return;
         }
         const rect = g.getClientRect();
@@ -613,8 +641,7 @@ export function setWindowForFormat(chosenFormat) {
         return;
       }
       const field = findFieldByName(fieldName);
-      const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === fieldName) || [];
-      const group = matches[0];
+      const group = findFieldGroup(fieldName);
       if (field && group) {
         void setActiveField(group, field);
       }
@@ -623,36 +650,41 @@ export function setWindowForFormat(chosenFormat) {
   syncFormatTabActive(chosenFormat);
 
   clearSelection(false);
-  if (hasDirtyFieldEdits()) {
+  const keepDirty = opts.keepDirtyFieldEdits === true && !formatChanged;
+  let keptDirtySelection = false;
+  if (keepDirty && hasDirtyFieldEdits()) {
     pendingSelectionNames = [];
     const name = dirtyFieldName();
-    if (name) {
-      const field = findFieldByName(name);
-      const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
-      const group = matches[0];
-      if (field && group) {
-        addToSelection(group, field, false);
-      }
+    const field = name ? findFieldByName(name) : undefined;
+    const group = name ? findFieldGroup(name) : undefined;
+    if (field && group) {
+      addToSelection(group, field, false);
+      keptDirtySelection = true;
+    } else {
+      clearFieldEditController();
     }
-  } else if (pendingSelectionNames.length > 0) {
-    const names = [...pendingSelectionNames];
-    pendingSelectionNames = [];
-    names.forEach(name => {
-      const field = findFieldByName(name);
-      // Konva matches id literally — do not CSS.escape
-      const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
-      const group = matches[0];
-      if (field && group) {
-        addToSelection(group, field, false);
+  } else if (hasDirtyFieldEdits()) {
+    clearFieldEditController();
+  }
+  if (!keptDirtySelection) {
+    if (pendingSelectionNames.length > 0) {
+      const names = [...pendingSelectionNames];
+      pendingSelectionNames = [];
+      names.forEach(name => {
+        const field = findFieldByName(name);
+        const group = findFieldGroup(name);
+        if (field && group) {
+          addToSelection(group, field, false);
+        }
+      });
+      updateSelectionUi({ silent: true });
+    } else if (editorMode === `design`) {
+      openDesignPalette();
+    } else {
+      const sidebar = document.getElementById(`fieldInfoSidebar`);
+      if (sidebar) {
+        sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
       }
-    });
-    updateSelectionUi({ silent: true });
-  } else if (editorMode === `design`) {
-    openDesignPalette();
-  } else {
-    const sidebar = document.getElementById(`fieldInfoSidebar`);
-    if (sidebar) {
-      sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
     }
   }
 
@@ -883,7 +915,7 @@ function renderSelectedFormat(layer, format, displayOnly) {
         const startRow = windowConfig.baseY;
         const startCol = windowConfig.baseX;
         /** @type {any[]} */
-        const kws = JSON.parse(JSON.stringify(format.keywords || []));
+        const kws = liveFormatKeywords(format.name, format.keywords || []);
         const wi = kws.findIndex((k) => k.name === `WINDOW`);
         const value = `${startRow} ${startCol} ${charH} ${charW}`;
         if (wi >= 0) {
@@ -1008,6 +1040,9 @@ function addFieldsToLayer(layer, format, displayOnly, windowOrigin) {
 
     const content = getElement(field, displayOnly || editorMode === `preview`, windowOrigin);
     if (content) {
+      if (displayOnly) {
+        content.setAttr(`ddsOverlay`, true);
+      }
       if (!canDisplay && editorMode === `design`) {
         content.opacity(0.35);
       }
@@ -1208,47 +1243,29 @@ function getElement(fieldInfo, displayOnly = false, windowOrigin = undefined) {
 
   group.on('dragmove', (e) => {
     const cGroup = e.target;
-    const boxPos = cGroup.absolutePosition();
-    let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
-    const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
-    const hitRight = snapped.x > widthInP(maxStartCol - 1);
-    const hitBottom = snapped.y > heightInP(renderRows - 1);
-    snapped = {
-      x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
-      y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1)),
-    };
-    cGroup.absolutePosition({
-      x: snapped.x + RULER_LEFT,
-      y: snapped.y + RULER_TOP
+    const clamped = clampAbsolutePositionToField(cGroup.absolutePosition(), {
+      wasY0: fieldInfo.position.y === 0,
+      length: dragLength,
     });
-    if (hitRight) {
+    cGroup.absolutePosition(clamped.pixels);
+    if (clamped.rawX > clamped.position.x) {
       showDesignError(
-        `Content past record length of ${renderCols} (length ${dragLength}).`,
+        `Content past record length of ${clamped.bounds.maxX} (length ${dragLength}).`,
       );
-    } else if (hitBottom) {
-      showDesignError(`Row must be between 1 and ${renderRows}.`);
+    } else if (fieldInfo.position.y !== 0 && clamped.rawY > clamped.position.y) {
+      showDesignError(`Row must be between 1 and ${clamped.bounds.maxY}.`);
     }
   });
 
   group.on(`dragend`, (e) => {
     const cGroup = e.target;
-    const boxPos = cGroup.absolutePosition();
-    let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
-    const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
-    snapped = {
-      x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
-      y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1)),
-    };
-    cGroup.absolutePosition({
-      x: snapped.x + RULER_LEFT,
-      y: snapped.y + RULER_TOP
-    });
-
-    const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-    const newPos = screenToFieldPosition(screen.x, screen.y, {
+    const clamped = clampAbsolutePositionToField(cGroup.absolutePosition(), {
       wasY0: fieldInfo.position.y === 0,
       length: dragLength,
     });
+    cGroup.absolutePosition(clamped.pixels);
+
+    const newPos = clamped.position;
     const dx = newPos.x - fieldInfo.position.x;
     const dy = (fieldInfo.position.y === 0) ? 0 : (newPos.y - fieldInfo.position.y);
 
@@ -1398,6 +1415,19 @@ function findFieldByName(name) {
   }
   const format = activeDocument.formats.find(f => f.name === lastSelectedFormat);
   return format?.fields.find(f => f.name === name);
+}
+
+/**
+ * Konva matches id literally — do not use a CSS `#id` selector (names may contain `#` `@` `$`).
+ * @param {string} name
+ * @returns {Group|undefined}
+ */
+function findFieldGroup(name) {
+  if (!name || !fieldLayer) {
+    return undefined;
+  }
+  const matches = fieldLayer.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
+  return matches[0];
 }
 
 /**
@@ -2286,7 +2316,7 @@ export function setupKeyboard() {
       if (!format) {
         return;
       }
-      const visible = format.fields.filter(f => f.displayType !== `hidden`);
+      const visible = format.fields.filter(f => f.displayType !== `hidden` && f.name);
       if (visible.length === 0) {
         return;
       }
@@ -2294,7 +2324,7 @@ export function setupKeyboard() {
       let idx = visible.findIndex(f => f.name === currentName);
       idx = e.shiftKey ? (idx - 1 + visible.length) % visible.length : (idx + 1) % visible.length;
       const next = visible[idx];
-      const group = fieldLayer?.findOne(`#${next.name}`);
+      const group = findFieldGroup(next.name);
       if (group) {
         void setActiveField(group, next);
       }

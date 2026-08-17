@@ -46,6 +46,23 @@ export function tryCommitKeywordEditor() {
 }
 
 /**
+ * Live Format Keywords panel list, falling back to the last-rendered model.
+ * Commits an open Confirm first so Apply window / WINDOW drag do not clobber it.
+ * @param {string} formatName
+ * @param {Keyword[]|undefined} fallback
+ * @returns {Keyword[]}
+ */
+export function liveFormatKeywords(formatName, fallback) {
+  tryCommitKeywordEditor();
+  const panel = typeof document !== `undefined`
+    ? document.getElementById(`keywords-${formatName}`)
+    : null;
+  const api = panel ? getKeywordPanelApi(panel) : undefined;
+  const source = api?.getKeywords() ?? fallback ?? [];
+  return JSON.parse(JSON.stringify(source));
+}
+
+/**
  * @param {string} id
  * @param {Keyword[]} inputKeywords
  * @param {(keywords: Keyword[]) => void} [onUpdate]

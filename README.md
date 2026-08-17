@@ -1,8 +1,7 @@
 # IBM i DDS Designer
 This is still a beta product. Please report any bugs/fixes/enhancement requests. 
 Visual designer for IBM i display files (`.dspf`) and printer files (`.prtf`) —
-a VS Code custom editor aimed at Rational Developer for i Screen Designer
-workflows.
+a VS Code custom editor for DDS screen design.
 
 ![IBM i DDS Designer editing a 24×80 display file](media/designer.png)
 

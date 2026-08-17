@@ -262,6 +262,7 @@ export class DspfDesignerProvider implements CustomTextEditorProvider {
         await delay(DESIGNER_CLOSE_FLUSH_MS);
         await editor.waitUntilIdle();
         editor.dispose();
+        await editor.waitUntilIdle();
         await confirmSaveOnDesignerClose(snapshot);
       })();
     });
@@ -337,6 +338,8 @@ class DspfDesignerSession {
   private disposed = false;
   /** Consumed by the next `load` so CodeLens Edit can open on a specific format. */
   private pendingSelectFormat: string | undefined;
+  /** `TextDocument.version` last parsed into `this.dds`. */
+  private parsedDocumentVersion: number | undefined;
 
   /** @deprecated use consumeIgnoredDocumentChange — kept for provider compatibility */
   public get isApplyingEdit(): boolean {
@@ -349,6 +352,9 @@ class DspfDesignerSession {
     private readonly panel: WebviewPanel
   ) {
     this.messageSub = panel.webview.onDidReceiveMessage((msg) => {
+      if (this.disposed) {
+        return;
+      }
       this.messageQueue.push(msg);
       void this.drainQueue();
     });
@@ -364,13 +370,20 @@ class DspfDesignerSession {
 
   /** Ask the webview to immediately send any debounced nudge edits. */
   requestFlushPendingEdits() {
-    this.panel.webview.postMessage({ command: `flushPendingEdits` });
+    try {
+      this.panel.webview.postMessage({ command: `flushPendingEdits` });
+    } catch {
+      // Panel may already be gone (dispose-time flush).
+    }
   }
 
-  /** Wait until the in-flight webview message queue has drained. */
+  /**
+   * Wait until the in-flight webview message queue has drained.
+   * After dispose, only wait for an apply already inside `handleMessage`.
+   */
   async waitUntilIdle(): Promise<void> {
     const deadline = Date.now() + 2000;
-    while (this.processingQueue || this.messageQueue.length > 0) {
+    while (this.processingQueue || (!this.disposed && this.messageQueue.length > 0)) {
       if (Date.now() >= deadline) {
         break;
       }
@@ -400,6 +413,7 @@ class DspfDesignerSession {
   dispose() {
     this.disposed = true;
     this.refResolveGeneration++;
+    this.messageQueue.length = 0;
     this.messageSub.dispose();
   }
 
@@ -414,11 +428,16 @@ class DspfDesignerSession {
       this.panel.webview.postMessage({ command: `connectionStatus`, connected: true });
       return;
     }
+    const wasReadonly = this.connectionReadonly;
     this.connectionReadonly = readonly;
     this.panel.webview.postMessage({
       command: `connectionStatus`,
       connected: !readonly,
     });
+    if (wasReadonly && !readonly) {
+      this.refFileCache.clear();
+      void this.resolveReferenceFieldLengths();
+    }
   }
 
   /** Returns true if this change was caused by our edit and should be skipped. */
@@ -509,9 +528,7 @@ class DspfDesignerSession {
   }
 
   load(rerender = true) {
-    const content = this.document.getText();
-    this.dds = new DisplayFile();
-    this.dds.parse(splitDocumentLines(content));
+    this.parseDocument();
 
     const selectFormat = this.pendingSelectFormat;
     this.pendingSelectFormat = undefined;
@@ -525,19 +542,61 @@ class DspfDesignerSession {
     void this.resolveReferenceFieldLengths();
   }
 
-  private refreshAfterEdit(rerender: boolean) {
-    this.document = workspace.textDocuments.find((d) => d.uri.toString() === this.document.uri.toString())
-      ?? this.document;
-    const content = this.document.getText();
-    this.dds = new DisplayFile();
-    this.dds.parse(splitDocumentLines(content));
+  private refreshAfterEdit(rerender: boolean, selectFormat?: string) {
+    this.parseDocument();
 
     this.panel.webview.postMessage({
       command: rerender ? "load" : "update",
       dds: this.dds,
       documentType: this.documentType,
+      ...(selectFormat ? { selectFormat } : {}),
     });
     void this.resolveReferenceFieldLengths();
+  }
+
+  /** Reparse `this.dds` from the live TextDocument and record its version. */
+  private parseDocument() {
+    this.document = workspace.textDocuments.find((d) => d.uri.toString() === this.document.uri.toString())
+      ?? this.document;
+    this.dds = new DisplayFile();
+    this.dds.parse(splitDocumentLines(this.document.getText()));
+    this.parsedDocumentVersion = this.document.version;
+  }
+
+  /**
+   * If the TextDocument changed since the last parse (side-by-side source
+   * edits during the 150ms webview reload debounce), refresh `this.dds`
+   * so WorkspaceEdit ranges match the live file.
+   */
+  private syncModelFromDocument() {
+    if (this.dds && this.document.version === this.parsedDocumentVersion) {
+      return;
+    }
+    this.parseDocument();
+  }
+
+  /**
+   * Reject renaming a named field onto another named field on the same format.
+   * Constants and empty names are allowed (they do not occupy the DDS name column uniquely).
+   */
+  private fieldRenameCollision(
+    recordFormat: string,
+    originalFieldName: string,
+    fieldInfo: { name?: string; displayType?: string },
+  ): string | undefined {
+    if (fieldInfo.displayType === `const` || !fieldInfo.name) {
+      return undefined;
+    }
+    const next = fieldInfo.name.trim().toUpperCase();
+    const orig = originalFieldName.trim().toUpperCase();
+    if (!next || next === orig) {
+      return undefined;
+    }
+    const taken = this.existingFieldNames(recordFormat).map((n) => n.toUpperCase());
+    if (taken.includes(next)) {
+      return `Cannot rename ${orig} to ${next}: a field with that name already exists.`;
+    }
+    return undefined;
   }
 
   /**
@@ -615,8 +674,11 @@ class DspfDesignerSession {
       let cached = this.refFileCache.get(key);
       if (cached === undefined) {
         const fetched = await fetchFileFieldsByName(items[0].library, items[0].file);
-        // Coerce empty results to `null` so we don't retry a known-missing file.
-        cached = fetched && fetched.size > 0 ? fetched : (fetched ? null : null);
+        if (fetched === undefined) {
+          // Transport / offline — do not cache; retry after reconnect.
+          continue;
+        }
+        cached = fetched.size > 0 ? fetched : null;
         this.refFileCache.set(key, cached);
       }
       if (!cached) {
@@ -643,14 +705,27 @@ class DspfDesignerSession {
   }
 
   private async applyEdit(edit: WorkspaceEdit): Promise<boolean> {
+    if (this.disposed) {
+      return false;
+    }
+    const versionBefore = this.document.version;
     // One document-change echo expected per applyEdit
     this.ignoreDocumentChanges++;
     try {
       const ok = await workspace.applyEdit(edit);
-      if (!ok) {
+      if (!ok || this.disposed) {
         this.ignoreDocumentChanges = Math.max(0, this.ignoreDocumentChanges - 1);
+        return false;
       }
-      return ok;
+      this.document = workspace.textDocuments.find((d) => d.uri.toString() === this.document.uri.toString())
+        ?? this.document;
+      if (this.document.version === versionBefore) {
+        // No-op / coalesced replace — no change event will consume the token.
+        this.ignoreDocumentChanges = Math.max(0, this.ignoreDocumentChanges - 1);
+      } else if (this.ignoreDocumentChanges > 1) {
+        this.ignoreDocumentChanges = 1;
+      }
+      return true;
     } catch (e) {
       this.ignoreDocumentChanges = Math.max(0, this.ignoreDocumentChanges - 1);
       throw e;
@@ -680,6 +755,10 @@ class DspfDesignerSession {
     this.processingQueue = true;
     try {
       while (this.messageQueue.length > 0) {
+        if (this.disposed) {
+          this.messageQueue.length = 0;
+          break;
+        }
         const message = this.messageQueue.shift()!;
         try {
           await this.handleMessage(message);
@@ -780,6 +859,9 @@ class DspfDesignerSession {
 
   /** Exposed for unit tests. */
   async handleMessage(message: WebviewToHostMessage) {
+    if (this.disposed) {
+      return;
+    }
     // Host-native dialogs / navigation are always allowed (they do not mutate the document).
     if (message.command === `requestInput`) {
       await this.handleRequestInput(message);
@@ -814,31 +896,34 @@ class DspfDesignerSession {
       return;
     }
 
-    if (!this.dds) {
+    if (this.connectionReadonly) {
+      this.reportEditFailure(`Cannot edit: IBM i connection is disconnected.`);
       return;
     }
 
-    if (this.connectionReadonly) {
-      this.reportEditFailure(`Cannot edit: IBM i connection is disconnected.`);
+    this.syncModelFromDocument();
+    if (!this.dds) {
       return;
     }
 
     switch (message.command) {
       case "deleteField": {
         const deleteFieldRange = this.dds.getRangeForField(message.recordFormat, message.fieldName);
-        if (deleteFieldRange) {
-          const workspaceEdit = new WorkspaceEdit();
-          workspaceEdit.delete(
-            this.document.uri,
-            this.fullLinesRange(deleteFieldRange.start, deleteFieldRange.end),
-            { label: `Delete DDS Field`, needsConfirmation: false }
-          );
-          if (!(await this.applyEdit(workspaceEdit))) {
-            this.reportEditFailure(`Could not delete field ${message.fieldName}.`);
-            break;
-          }
-          this.refreshAfterEdit(true);
+        if (!deleteFieldRange) {
+          this.reportEditFailure(`Could not delete field ${message.fieldName}.`);
+          break;
         }
+        const workspaceEdit = new WorkspaceEdit();
+        workspaceEdit.delete(
+          this.document.uri,
+          this.fullLinesRange(deleteFieldRange.start, deleteFieldRange.end),
+          { label: `Delete DDS Field`, needsConfirmation: false }
+        );
+        if (!(await this.applyEdit(workspaceEdit))) {
+          this.reportEditFailure(`Could not delete field ${message.fieldName}.`);
+          break;
+        }
+        this.refreshAfterEdit(true);
         break;
       }
 
@@ -849,6 +934,7 @@ class DspfDesignerSession {
           .sort((a, b) => b.start - a.start);
 
         if (ranges.length === 0) {
+          this.reportEditFailure(`Could not delete selected fields.`);
           break;
         }
 
@@ -877,21 +963,24 @@ class DspfDesignerSession {
         }
         this.uniquifyIncomingFields(message.recordFormat, [fieldInfo]);
         const newField = this.dds.updateField(message.recordFormat, undefined, fieldInfo);
-        if (newField?.range) {
-          const workspaceEdit = new WorkspaceEdit();
-          this.insertLinesAt(workspaceEdit, newField.range.start, newField.newLines, `Add DDS Field`);
-          if (!(await this.applyEdit(workspaceEdit))) {
-            this.reportEditFailure(`Could not add field.`);
-            break;
-          }
-          this.refreshAfterEdit(true);
+        if (!newField?.range) {
+          this.reportEditFailure(`Could not add field.`);
+          break;
         }
+        const workspaceEdit = new WorkspaceEdit();
+        this.insertLinesAt(workspaceEdit, newField.range.start, newField.newLines, `Add DDS Field`);
+        if (!(await this.applyEdit(workspaceEdit))) {
+          this.reportEditFailure(`Could not add field.`);
+          break;
+        }
+        this.refreshAfterEdit(true);
         break;
       }
 
       case "newFields": {
         const format = this.dds.findFormat(message.recordFormat);
-        if (!format || !message.fields?.length) {
+        if (!format || format.name === `_GLOBAL` || !message.fields?.length) {
+          this.reportEditFailure(`Could not add fields.`);
           break;
         }
         for (const f of message.fields) {
@@ -923,25 +1012,36 @@ class DspfDesignerSession {
           this.reportEditFailure(fieldError);
           break;
         }
+        const renameError = this.fieldRenameCollision(
+          message.recordFormat,
+          message.originalFieldName,
+          fieldInfo,
+        );
+        if (renameError) {
+          this.reportEditFailure(renameError);
+          break;
+        }
         const fieldUpdate = this.dds.updateField(
           message.recordFormat,
           message.originalFieldName,
           fieldInfo
         );
-        if (fieldUpdate?.range) {
-          const workspaceEdit = new WorkspaceEdit();
-          workspaceEdit.replace(
-            this.document.uri,
-            this.fullLinesRange(fieldUpdate.range.start, fieldUpdate.range.end),
-            fieldUpdate.newLines.join(this.eol) + this.eol,
-            { label: `Update DDS Field`, needsConfirmation: false }
-          );
-          if (!(await this.applyEdit(workspaceEdit))) {
-            this.reportEditFailure(`Could not update field ${message.originalFieldName}.`);
-            break;
-          }
-          this.refreshAfterEdit(false);
+        if (!fieldUpdate?.range) {
+          this.reportEditFailure(`Could not update field ${message.originalFieldName}.`);
+          break;
         }
+        const workspaceEdit = new WorkspaceEdit();
+        workspaceEdit.replace(
+          this.document.uri,
+          this.fullLinesRange(fieldUpdate.range.start, fieldUpdate.range.end),
+          fieldUpdate.newLines.join(this.eol) + this.eol,
+          { label: `Update DDS Field`, needsConfirmation: false }
+        );
+        if (!(await this.applyEdit(workspaceEdit))) {
+          this.reportEditFailure(`Could not update field ${message.originalFieldName}.`);
+          break;
+        }
+        this.refreshAfterEdit(false);
         break;
       }
 
@@ -950,6 +1050,15 @@ class DspfDesignerSession {
           const fieldError = validateFieldEditPayload(u.fieldInfo);
           if (fieldError) {
             this.reportEditFailure(fieldError);
+            return;
+          }
+          const renameError = this.fieldRenameCollision(
+            message.recordFormat,
+            u.originalFieldName,
+            u.fieldInfo,
+          );
+          if (renameError) {
+            this.reportEditFailure(renameError);
             return;
           }
         }
@@ -963,6 +1072,7 @@ class DspfDesignerSession {
           .sort((a, b) => b.update.range!.start - a.update.range!.start);
 
         if (prepared.length === 0) {
+          this.reportEditFailure(`Could not update fields.`);
           break;
         }
 
@@ -992,6 +1102,7 @@ class DspfDesignerSession {
         }
         const formatUpdate = this.dds.updateFormatHeader(message.recordFormat, message.newKeywords);
         if (!formatUpdate?.range) {
+          this.reportEditFailure(`Could not update record format ${message.recordFormat}.`);
           break;
         }
         const { start, end } = formatUpdate.range;
@@ -1020,9 +1131,16 @@ class DspfDesignerSession {
       }
 
       case "newFormats": {
+        for (const fmt of message.formats || []) {
+          const kwError = validateFormatKeywords(fmt.keywords);
+          if (kwError) {
+            this.reportEditFailure(kwError);
+            return;
+          }
+        }
         const insert = this.dds.insertFormats(message.formats || []);
         if (!insert?.range) {
-          window.showWarningMessage(`Could not add record format(s). Check names are valid and unique.`);
+          this.reportEditFailure(`Could not add record format(s). Check names are valid and unique.`);
           break;
         }
         const workspaceEdit = new WorkspaceEdit();
@@ -1031,7 +1149,7 @@ class DspfDesignerSession {
           this.reportEditFailure(`Could not add record format(s).`);
           break;
         }
-        this.refreshAfterEdit(true);
+        this.refreshAfterEdit(true, message.selectFormat);
         break;
       }
 
@@ -1039,7 +1157,7 @@ class DspfDesignerSession {
         const refs = this.dds.formatsReferencing(message.recordFormat);
         if (refs.length > 0) {
           window.showWarningMessage(
-            `Cannot delete ${message.recordFormat}: still referenced by ${refs.join(`, `)} via SFLCTL/SFLMSGRCD.`
+            `Cannot delete ${message.recordFormat}: still referenced by ${refs.join(`, `)} via SFLCTL.`
           );
           this.panel.webview.postMessage({
             command: `editFailed`,
@@ -1050,7 +1168,7 @@ class DspfDesignerSession {
         }
         const del = this.dds.deleteFormat(message.recordFormat);
         if (!del?.range) {
-          window.showWarningMessage(`Could not delete record format ${message.recordFormat}.`);
+          this.reportEditFailure(`Could not delete record format ${message.recordFormat}.`);
           break;
         }
         const workspaceEdit = new WorkspaceEdit();
@@ -1070,7 +1188,7 @@ class DspfDesignerSession {
       case "renameFormat": {
         const renamed = this.dds.renameFormat(message.recordFormat, message.newName);
         if (!renamed?.length) {
-          window.showWarningMessage(
+          this.reportEditFailure(
             `Could not rename ${message.recordFormat} to ${message.newName}. Check the name is valid and unique.`
           );
           break;
@@ -1090,7 +1208,7 @@ class DspfDesignerSession {
       case "copyFormat": {
         const copied = this.dds.copyFormat(message.recordFormat, message.newName);
         if (!copied?.range) {
-          window.showWarningMessage(
+          this.reportEditFailure(
             `Could not copy ${message.recordFormat} as ${message.newName}. Check the name is valid and unique.`
           );
           break;
@@ -1128,7 +1246,8 @@ class DspfDesignerSession {
 
       case "placeDatabaseFields": {
         const format = this.dds.findFormat(message.recordFormat);
-        if (!format || !message.fields?.length) {
+        if (!format || format.name === `_GLOBAL` || !message.fields?.length) {
+          this.reportEditFailure(`Could not place database fields.`);
           break;
         }
         for (const f of message.fields) {
