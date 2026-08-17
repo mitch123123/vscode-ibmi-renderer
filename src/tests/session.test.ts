@@ -95,7 +95,8 @@ import { WorkspaceEdit } from "vscode";
 import { designerTabTitle, DspfDesignerSession } from "../ui/index";
 
 function makeDocument(lines: string[]) {
-  const text = lines.join(`\n`);
+  let current = [...lines];
+  let version = 1;
   return {
     uri: {
       scheme: `file`,
@@ -104,12 +105,21 @@ function makeDocument(lines: string[]) {
     },
     languageId: `dds.dspf`,
     eol: 1,
-    lineCount: lines.length,
-    getText: () => text,
+    get version() {
+      return version;
+    },
+    get lineCount() {
+      return current.length;
+    },
+    getText: () => current.join(`\n`),
     lineAt: (i: number) => ({
-      text: lines[i] ?? ``,
-      range: { start: { line: i, character: 0 }, end: { line: i, character: (lines[i] ?? ``).length } },
+      text: current[i] ?? ``,
+      range: { start: { line: i, character: 0 }, end: { line: i, character: (current[i] ?? ``).length } },
     }),
+    replaceLines(next: string[]) {
+      current = [...next];
+      version += 1;
+    },
   };
 }
 
@@ -441,5 +451,199 @@ describe(`DspfDesignerSession`, () => {
       revealLines: { startLine: 1, endLine: 1 },
     });
     expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+  });
+
+  it(`forwards newFormats.selectFormat on the load message`, async () => {
+    const lines = [`     A          R HEAD`];
+    const { session, panel } = makeSession(lines);
+    panel.posted.length = 0;
+
+    await session.handleMessage({
+      command: `newFormats`,
+      formats: [{ name: `BODY`, keywords: [] }],
+      selectFormat: `BODY`,
+    });
+
+    const load = panel.posted.find((m: any) => m.command === `load`);
+    expect(load).toMatchObject({ command: `load`, selectFormat: `BODY` });
+    expect(vscodeMocks.applyEdit).toHaveBeenCalled();
+  });
+
+  it(`rejects updateField rename that collides with an existing field`, async () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A            FIELD1         5A  B  1  2`,
+      `     A            FIELD2         5A  B  2  2`,
+    ];
+    const { session, panel } = makeSession(lines);
+    panel.posted.length = 0;
+
+    await session.handleMessage({
+      command: `updateField`,
+      recordFormat: `HEAD`,
+      originalFieldName: `FIELD1`,
+      fieldInfo: {
+        name: `FIELD2`,
+        displayType: `both`,
+        type: `A`,
+        length: 5,
+        decimals: 0,
+        position: { x: 1, y: 1 },
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      },
+    });
+
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+  });
+
+  it(`posts editFailed when deleteField cannot find the field`, async () => {
+    const lines = [`     A          R HEAD`, `     A            FIELD1         5A  B  1  2`];
+    const { session, panel } = makeSession(lines);
+    panel.posted.length = 0;
+
+    await session.handleMessage({
+      command: `deleteField`,
+      recordFormat: `HEAD`,
+      fieldName: `MISSING`,
+    });
+
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+  });
+
+  it(`rejects newFields and placeDatabaseFields on _GLOBAL`, async () => {
+    const lines = [`     A                                      DSPSIZ(24 80 *DS3)`, `     A          R HEAD`];
+    const { session, panel } = makeSession(lines);
+    const field = {
+      name: `BAD1`,
+      displayType: `both`,
+      type: `A`,
+      length: 5,
+      decimals: 0,
+      position: { x: 1, y: 1 },
+      conditions: [],
+      keywords: [],
+      startRange: 0,
+    };
+
+    panel.posted.length = 0;
+    await session.handleMessage({
+      command: `newFields`,
+      recordFormat: `_GLOBAL`,
+      fields: [field],
+    });
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+
+    vscodeMocks.applyEdit.mockClear();
+    panel.posted.length = 0;
+    await session.handleMessage({
+      command: `placeDatabaseFields`,
+      recordFormat: `_GLOBAL`,
+      fields: [field],
+    });
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
+  });
+
+  it(`does not apply WorkspaceEdits after dispose`, async () => {
+    const lines = [`     A          R HEAD`, `     A            FIELD1         5A  B  1  2`];
+    const { session } = makeSession(lines);
+    session.dispose();
+    vscodeMocks.applyEdit.mockClear();
+
+    await session.handleMessage({
+      command: `deleteField`,
+      recordFormat: `HEAD`,
+      fieldName: `FIELD1`,
+    });
+
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+  });
+
+  it(`does not leave ignoreDocumentChanges set when applyEdit does not bump version`, async () => {
+    const lines = [`     A          R HEAD`, `     A            FIELD1         5A  B  1  2`];
+    const { session } = makeSession(lines);
+
+    await session.handleMessage({
+      command: `updateField`,
+      recordFormat: `HEAD`,
+      originalFieldName: `FIELD1`,
+      fieldInfo: {
+        name: `FIELD1`,
+        displayType: `both`,
+        type: `A`,
+        length: 5,
+        decimals: 0,
+        position: { x: 3, y: 1 },
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      },
+    });
+
+    expect(vscodeMocks.applyEdit).toHaveBeenCalled();
+    expect(session.consumeIgnoredDocumentChange()).toBe(false);
+  });
+
+  it(`reparses live document lines before updateField when version drifted`, async () => {
+    const original = [`     A          R HEAD`, `     A            FIELD1         5A  B  1  2`];
+    const { session, document } = makeSession(original);
+    (document as any).replaceLines([
+      `     A* comment one`,
+      `     A* comment two`,
+      ...original,
+    ]);
+
+    const captured: WorkspaceEdit[] = [];
+    vscodeMocks.applyEdit.mockImplementation(async (edit: WorkspaceEdit) => {
+      captured.push(edit);
+      return true;
+    });
+
+    await session.handleMessage({
+      command: `updateField`,
+      recordFormat: `HEAD`,
+      originalFieldName: `FIELD1`,
+      fieldInfo: {
+        name: `FIELD1`,
+        displayType: `both`,
+        type: `A`,
+        length: 5,
+        decimals: 0,
+        position: { x: 4, y: 1 },
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      },
+    });
+
+    expect(captured.length).toBe(1);
+    const edit = captured[0] as any;
+    expect(edit.replaces.length).toBe(1);
+    // Two comments prepended: FIELD1 moved from line 1 to line 3.
+    expect(edit.replaces[0].start).toBe(3);
+    expect(edit.replaces[0].text).not.toContain(`comment`);
+  });
+
+  it(`rejects newFormats keywords that contain newlines`, async () => {
+    const lines = [`     A          R HEAD`];
+    const { session, panel } = makeSession(lines);
+    panel.posted.length = 0;
+
+    await session.handleMessage({
+      command: `newFormats`,
+      formats: [{
+        name: `BODY`,
+        keywords: [{ name: `TEXT`, value: `Hello\n     A          R INJECT`, conditions: [] }],
+      }],
+      selectFormat: `BODY`,
+    });
+
+    expect(vscodeMocks.applyEdit).not.toHaveBeenCalled();
+    expect(panel.posted.some((m: any) => m.command === `editFailed`)).toBe(true);
   });
 });

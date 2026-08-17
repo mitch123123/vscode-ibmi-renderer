@@ -5,6 +5,8 @@ export type { Conditional, DisplayType, DdsLineRange, DdsUpdate, Keyword, Passth
 
 const GLOBAL_RECORD_NAME = `_GLOBAL`;
 const NUMERIC_TYPES = new Set([`D`, `Z`, `Y`, `S`, `P`, `F`]);
+/** Keywords that occupy the constant area (cols 45+) with no quoted literal. */
+const KEYWORD_CONST_NAMES = new Set([`DATE`, `TIME`, `USER`, `SYSNAME`, `MSGCON`]);
 
 /** Split document text into lines matching VS Code TextDocument line indexes (drop trailing empty from final EOL). */
 export function splitDocumentLines(content: string): string[] {
@@ -33,7 +35,7 @@ export class DisplayFile {
 
     lines.forEach((line, index) => {
       const originalLine = line;
-      line = line.padEnd(80);
+      line = (originalLine.length > 80 ? originalLine.substring(0, 80) : originalLine).padEnd(80);
 
       // Preserve comments and blank lines as passthrough (not rewritten on field edits)
       if (line[6] === `*` || originalLine.trim() === ``) {
@@ -90,8 +92,8 @@ export class DisplayFile {
             this.currentField = new FieldInfo(index);
             this.currentField.ownedLines = [index];
             this.currentField.position = {
-              x: Number(x),
-              y: Number(y)
+              x: this.resolveColumn(x),
+              y: y === `` ? 0 : Number(y)
             };
           } else if (x !== "" && y === "") {
             if (this.currentField) {
@@ -100,24 +102,10 @@ export class DisplayFile {
               this.currentFields.push(this.currentField);
             }
 
-            let totalX = Number(x);
-            if (x.startsWith(`+`)) {
-              const prev = this.currentFields[this.currentFields.length - 1];
-              if (prev) {
-                totalX = prev.position.x + Number(x.substring(1));
-                if (prev.value) {
-                  totalX += prev.value.length;
-                }
-              } else {
-                // First field in format with relative +n — treat as absolute from column 1
-                totalX = Number(x.substring(1)) || 1;
-              }
-            }
-
             this.currentField = new FieldInfo(index);
             this.currentField.ownedLines = [index];
             this.currentField.position = {
-              x: totalX,
+              x: this.resolveColumn(x),
               y: 0
             };
           } else if (name !== undefined && type !== "") {
@@ -145,7 +133,7 @@ export class DisplayFile {
               this.currentField.length = parsedLen !== undefined && !Number.isNaN(parsedLen)
                 ? parsedLen
                 : undefined;
-              switch (inout) {
+                switch (inout) {
                 case "I":
                   this.currentField.displayType = `input`;
                   break;
@@ -162,6 +150,10 @@ export class DisplayFile {
                   this.currentField.displayType = `program`;
                   break;
                 case " ":
+                  // Printer-style blank usage — keep col 38 as space, not O.
+                  this.currentField.rawUsage = ` `;
+                  this.currentField.displayType = `output`;
+                  break;
                 case "O":
                   this.currentField.displayType = `output`;
                   break;
@@ -178,6 +170,9 @@ export class DisplayFile {
                 this.currentField.primitiveType = `char`;
               } else {
                 this.currentField.decimals = 0;
+                if (dec !== ``) {
+                  this.currentField.decimals = Number(dec);
+                }
                 switch (type) {
                   case "D":
                   case "Z":
@@ -185,15 +180,15 @@ export class DisplayFile {
                   case "S":
                   case "P":
                     this.currentField.primitiveType = `decimal`;
-                    if (dec !== "") { this.currentField.decimals = Number(dec); }
                     break;
                   case `L`: // Date data type (not the DATE keyword)
-                    this.currentField.length = 8;
-                    this.currentField.primitiveType = `char`;
-                    break;
                   case `T`: // Time data type (not the TIME keyword)
-                    this.currentField.length = 8;
                     this.currentField.primitiveType = `char`;
+                    // Keep cols 30–34 as parsed (*ISO dates are 10, not 8).
+                    // Blank length: display-only fallback, do not invent source length.
+                    if (this.currentField.length === undefined) {
+                      this.currentField.resolvedLength = 8;
+                    }
                     break;
                   default:
                     this.currentField.primitiveType = `char`;
@@ -253,6 +248,32 @@ export class DisplayFile {
     this.currentField = undefined;
     this.currentFields = [];
     this.currentRecord = undefined;
+  }
+
+  /**
+   * Absolute start column from DDS cols 42–44. `+n` is relative to the end of
+   * the previous field (start + length/value), not `Number("+n")` which is n.
+   */
+  private resolveColumn(x: string): number {
+    if (!x.startsWith(`+`)) {
+      const n = Number(x);
+      return Number.isFinite(n) ? n : 0;
+    }
+    const offset = Number(x.substring(1));
+    const delta = Number.isFinite(offset) ? offset : 0;
+    const prev = this.currentFields[this.currentFields.length - 1];
+    if (!prev) {
+      return delta || 1;
+    }
+    let width = 0;
+    if (prev.value) {
+      width = prev.value.length;
+    } else if (typeof prev.length === `number` && prev.length > 0) {
+      width = prev.length;
+    } else if (typeof prev.resolvedLength === `number` && prev.resolvedLength > 0) {
+      width = prev.resolvedLength;
+    }
+    return prev.position.x + delta + width;
   }
 
   HandleKeywords(keywords: string, conditionals = ``, lineIndex?: number) {
@@ -364,42 +385,59 @@ export class DisplayFile {
       let word = ``;
       let innerValue = ``;
       let inString = false;
+      let wrapJoin = false;
 
       for (let i = 0; i < value.length; i++) {
         switch (value[i]) {
           case `+`:
           case `-`:
-            if (value[i + 1] !== newLineMark) {
+            if (value[i + 1] === newLineMark) {
+              wrapJoin = true;
+            } else {
               innerValue += value[i];
             }
             break;
 
           case `'`:
-            if (inBrackets > 0) {
-              innerValue += value[i];
-            } else {
-              if (inString) {
-                inString = false;
-                result.value = innerValue;
-                innerValue = ``;
+            if (inString) {
+              if (value[i + 1] === `'`) {
+                innerValue += inBrackets === 0 ? `'` : `''`;
+                i++;
               } else {
-                inString = true;
+                inString = false;
+                if (inBrackets === 0) {
+                  result.value = innerValue;
+                  innerValue = ``;
+                } else {
+                  innerValue += `'`;
+                }
+              }
+            } else {
+              inString = true;
+              if (inBrackets > 0) {
+                innerValue += `'`;
               }
             }
             break;
 
           case `(`:
             if (inString) {
-              innerValue += value[i];
+              innerValue += `(`;
+            } else if (inBrackets === 0) {
+              inBrackets = 1;
             } else {
               inBrackets++;
+              innerValue += `(`;
             }
             break;
           case `)`:
             if (inString) {
-              innerValue += value[i];
-            } else {
+              innerValue += `)`;
+            } else if (inBrackets > 1) {
               inBrackets--;
+              innerValue += `)`;
+            } else if (inBrackets === 1) {
+              inBrackets = 0;
             }
             break;
 
@@ -424,7 +462,13 @@ export class DisplayFile {
               }
             }
 
-            if (value[i] === newLineMark) { conditionalLine += 1; }
+            if (value[i] === newLineMark) {
+              if (wrapJoin) {
+                wrapJoin = false;
+              } else {
+                conditionalLine += 1;
+              }
+            }
             break;
           default:
             if (inBrackets > 0 || inString) { innerValue += value[i]; }
@@ -485,6 +529,11 @@ export class DisplayFile {
     return lines;
   }
 
+  /** IBM i string literal: `'` is doubled. */
+  public static quoteDdsString(value: string): string {
+    return `'${String(value ?? ``).replace(/'/g, `''`)}'`;
+  }
+
   public static getLinesForKeyword(keyword: Keyword): string[] {
     const lines: string[] = [];
     const condition = this.conditionalGroups(keyword.conditions);
@@ -521,32 +570,43 @@ export class DisplayFile {
       program: "P",
     };
 
-    // y === 0 means printer-style "row column blank" — emit three spaces, never `0`.
-    const x = DisplayFile.fitColumn(field.position.x, 3, `right`);
-    const y = field.position.y === 0
+    // y <= 0 / x <= 0: blank row or column (printer-style, hidden, P/M) — never `0` or `-1`.
+    const x = field.position.x <= 0
+      ? `   `
+      : DisplayFile.fitColumn(field.position.x, 3, `right`);
+    const y = field.position.y <= 0
       ? `   `
       : DisplayFile.fitColumn(field.position.y, 3, `right`);
     const mappedUsage = field.displayType ? FIELD_TYPE[field.displayType] : undefined;
-    // Prefer a known mapping; otherwise preserve the raw col-38 char so we never
-    // drop a named field's definition line for an unrecognized usage.
-    const usageChar = mappedUsage !== undefined
-      ? mappedUsage
-      : (field.rawUsage && field.rawUsage.length > 0 ? field.rawUsage[0] : ` `);
+    // Prefer the source col-38 character when known (blank printer usage, unknown usage).
+    const usageChar = field.rawUsage !== undefined && field.rawUsage.length > 0
+      ? field.rawUsage[0]
+      : (mappedUsage !== undefined ? mappedUsage : ` `);
 
     const condition = this.conditionalGroups(field.conditions);
     const firstConditions = condition[0] || [];
     const conditionStrings = DisplayFile.formatConditionString(firstConditions);
     const nameCol = DisplayFile.fitColumn(field.name || ``, 10, `left`);
+    const kwConstIndex = field.displayType === `const` && !(field.value)
+      ? field.keywords.findIndex((k) => KEYWORD_CONST_NAMES.has((k.name || ``).toUpperCase()))
+      : -1;
 
     if (field.displayType === `const`) {
       const value = field.value ?? ``;
-      newLines.push(
-        ...DisplayFile.wrapKeywordArea(
-          `     A ${conditionStrings}                      ${y}${x}`,
-          `'${value}'`,
-        ),
-      );
-    } else if (field.isReference && field.name) {
+      const prefix = `     A ${conditionStrings}                      ${y}${x}`;
+      if (kwConstIndex >= 0) {
+        const kw = field.keywords[kwConstIndex];
+        const rawKeyword = `${kw.name}${kw.value ? `(${kw.value})` : ``}`;
+        newLines.push(...DisplayFile.wrapKeywordArea(prefix, rawKeyword));
+      } else {
+        newLines.push(
+          ...DisplayFile.wrapKeywordArea(prefix, DisplayFile.quoteDdsString(value)),
+        );
+      }
+    } else if (
+      field.isReference && field.name
+      && (!field.type || field.type.trim().toUpperCase() === `R`)
+    ) {
       const length = field.length !== undefined && field.length !== null && field.length !== 0
         ? DisplayFile.fitColumn(field.length, 5, `right`)
         : `     `;
@@ -560,7 +620,8 @@ export class DisplayFile {
       const length = field.length !== undefined && field.length !== null
         ? DisplayFile.fitColumn(field.length, 5, `right`)
         : `     `;
-      const emitDecimals = hasType && NUMERIC_TYPES.has(field.type!.toUpperCase());
+      const emitDecimals = (hasType && NUMERIC_TYPES.has(field.type!.toUpperCase()))
+        || (!hasType && Number(field.decimals) > 0);
       const decimals = DisplayFile.fitColumn(
         emitDecimals ? String(field.decimals ?? 0) : ``,
         2,
@@ -579,7 +640,11 @@ export class DisplayFile {
     // already encode date/time; never re-emit stub DATE/TIME keywords that were
     // historically injected into the in-memory model for preview.
     const typeUpper = (field.type || ``).toUpperCase();
-    for (const keyword of field.keywords) {
+    for (let ki = 0; ki < field.keywords.length; ki++) {
+      if (ki === kwConstIndex) {
+        continue;
+      }
+      const keyword = field.keywords[ki];
       const kwName = (keyword.name || ``).toUpperCase();
       if (typeUpper === `L` && kwName === `DATE`) {
         continue;
@@ -653,6 +718,21 @@ export class DisplayFile {
       if (!range) {
         // Failed lookup must NOT become an insert
         return undefined;
+      }
+
+      const nextName = (fieldInfo.name || ``).trim().toUpperCase();
+      const oldName = originalFieldName.trim().toUpperCase();
+      if (fieldInfo.displayType !== `const` && nextName && nextName !== oldName) {
+        const format = this.findFormat(recordFormat);
+        const collision = format?.fields.some((f) => {
+          if (f.displayType === `const` || !f.name) {
+            return false;
+          }
+          return f.name.toUpperCase() === nextName;
+        });
+        if (collision) {
+          return undefined;
+        }
       }
 
       // Rebuild span keeping mid-span comments in their relative positions
@@ -878,7 +958,7 @@ export class DisplayFile {
   }
 
   /**
-   * Names of formats that reference `recordFormat` via SFLCTL or SFLMSGRCD.
+   * Names of formats that reference `recordFormat` via SFLCTL.
    * Used to block subfile-record deletion while the matching CTL still exists,
    * and to warn users before they invalidate a subfile pair.
    */
@@ -891,7 +971,7 @@ export class DisplayFile {
       }
       for (const kw of format.keywords || []) {
         const name = (kw.name || ``).toUpperCase();
-        if (name !== `SFLCTL` && name !== `SFLMSGRCD`) {
+        if (name !== `SFLCTL`) {
           continue;
         }
         if (String(kw.value || ``).trim().toUpperCase() === target) {
@@ -915,7 +995,7 @@ export class DisplayFile {
   }
 
   /**
-   * Rename a record format and retarget SFLCTL / SFLMSGRCD references from the old name.
+   * Rename a record format and retarget SFLCTL / WINDOW references from the old name.
    * Returns scoped per-line updates (R-line + any referencing keyword lines) so the
    * host can apply a small WorkspaceEdit instead of rewriting the whole file.
    * Returns `undefined` when the rename is invalid (bad name, unknown source, collision)
@@ -1018,14 +1098,65 @@ export class DisplayFile {
   }
 
   /**
-   * Retarget SFLCTL / SFLMSGRCD references to `oldName` on a single DDS line.
-   * Case-insensitive on the keyword; preserves surrounding spaces inside the
-   * parentheses. Non-matching lines are returned unchanged.
+   * Retarget SFLCTL / WINDOW(record) references to `oldName` on a single DDS line.
+   * Comments and quoted TEXT are left unchanged. SFLMSGRCD is a line number, not a format.
    */
   static retargetFormatRefsInLine(line: string, oldName: string, newName: string): string {
+    const padded = line.padEnd(80);
+    if (padded[6] === `*`) {
+      return line;
+    }
+    const head = line.length > 44 ? line.substring(0, 44) : line;
+    const tail = line.length > 44 ? line.substring(44) : ``;
+    if (!tail) {
+      return line;
+    }
     const escaped = DisplayFile.escapeRegExp(oldName);
-    const re = new RegExp(`\\b(SFLCTL|SFLMSGRCD)\\(\\s*${escaped}\\s*\\)`, `gi`);
-    return line.replace(re, (_m, kw: string) => `${kw.toUpperCase()}(${newName})`);
+    const re = new RegExp(`\\b(SFLCTL|WINDOW)\\(\\s*${escaped}\\s*\\)`, `gi`);
+    const nextTail = DisplayFile.replaceOutsideQuotes(
+      tail,
+      re,
+      (_m, kw: string) => `${String(kw).toUpperCase()}(${newName})`,
+    );
+    if (nextTail === tail) {
+      return line;
+    }
+    return head + nextTail;
+  }
+
+  /** Apply `re` only on segments that are not inside a DDS `'...'` string. */
+  static replaceOutsideQuotes(
+    text: string,
+    re: RegExp,
+    replacer: (match: string, ...args: string[]) => string,
+  ): string {
+    let out = ``;
+    let inString = false;
+    let i = 0;
+    while (i < text.length) {
+      if (text[i] === `'`) {
+        if (inString && text[i + 1] === `'`) {
+          out += `''`;
+          i += 2;
+          continue;
+        }
+        inString = !inString;
+        out += `'`;
+        i++;
+        continue;
+      }
+      if (inString) {
+        out += text[i];
+        i++;
+        continue;
+      }
+      const rest = text.substring(i);
+      const q = rest.indexOf(`'`);
+      const chunk = q < 0 ? rest : rest.substring(0, q);
+      out += chunk.replace(re, replacer as (substring: string, ...args: string[]) => string);
+      i += chunk.length;
+    }
+    return out;
   }
 
   /**

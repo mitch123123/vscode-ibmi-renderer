@@ -649,6 +649,13 @@
     clearKeywordEditor();
     return true;
   }
+  function liveFormatKeywords(formatName, fallback) {
+    tryCommitKeywordEditor();
+    const panel = typeof document !== `undefined` ? document.getElementById(`keywords-${formatName}`) : null;
+    const api = panel ? getKeywordPanelApi(panel) : void 0;
+    const source = api?.getKeywords() ?? fallback ?? [];
+    return JSON.parse(JSON.stringify(source));
+  }
   function createKeywordPanel(id, inputKeywords, onUpdate, level = `field`) {
     const originalKeywords = JSON.parse(JSON.stringify(inputKeywords || []));
     const keywords = JSON.parse(JSON.stringify(inputKeywords || []));
@@ -2101,6 +2108,15 @@
     const x = field.position.x;
     const y = field.position.y;
     const len = fieldContentLength(field);
+    if (Number.isInteger(x) && x <= 0) {
+      if (Number.isInteger(y) && y <= 0) {
+        return void 0;
+      }
+      if (y !== 0 && (!Number.isInteger(y) || y < 0 || y > maxY)) {
+        return `Row must be an integer from 0 to ${maxY}.`;
+      }
+      return void 0;
+    }
     if (!Number.isInteger(x) || x < 1) {
       return `Column must be an integer from 1 to ${maxX}.`;
     }
@@ -2277,8 +2293,16 @@
       }
       return void 0;
     }
+    if (parts.length === 3 && parts[0].toUpperCase() === `*DFT`) {
+      for (const p of parts.slice(1)) {
+        if (!/^\d+$/.test(p) || Number(p) < 1) {
+          return `WINDOW *DFT height and width must be positive integers.`;
+        }
+      }
+      return void 0;
+    }
     if (parts.length !== 4) {
-      return `WINDOW must be four positive integers (row col height width) or a record-format name.`;
+      return `WINDOW must be four positive integers (row col height width), *DFT height width, or a record-format name.`;
     }
     for (const p of parts) {
       if (!/^\d+$/.test(p) || Number(p) < 1) {
@@ -2376,7 +2400,7 @@
           showHostError(`SFLSIZ must be greater than or equal to SFLPAG.`);
           return;
         }
-        const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
+        const next = liveFormatKeywords(recordInfo.name, recordInfo.keywords || []);
         const upsert = (name, value) => {
           const i = next.findIndex((k) => k.name === name);
           if (i >= 0) {
@@ -2439,7 +2463,7 @@
           showHostError(winError);
           return;
         }
-        const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
+        const next = liveFormatKeywords(recordInfo.name, recordInfo.keywords || []);
         const upsert = (name, value) => {
           const i = next.findIndex((k) => k.name === name);
           if (i >= 0) {
@@ -2656,7 +2680,8 @@
     const c2 = parseCond(newProps.cond2);
     const c3 = parseCond(newProps.cond3);
     if (newProps.cond1 !== void 0 || newProps.cond2 !== void 0 || newProps.cond3 !== void 0) {
-      next.conditions = [c1, c2, c3].filter(Boolean);
+      const extras = (fieldInfo.conditions || []).slice(3);
+      next.conditions = [c1, c2, c3].filter(Boolean).concat(extras);
     }
     return { ok: true, field: next };
   }
@@ -2878,7 +2903,7 @@
       setTabs(validFormats.map((format) => format.name), lastSelectedFormat);
       const chosenFormat = lastSelectedFormat || (validFormats[0] ? validFormats[0].name : void 0);
       if (chosenFormat) {
-        setWindowForFormat(chosenFormat);
+        setWindowForFormat(chosenFormat, { keepDirtyFieldEdits: opts.restoreSelection === true });
       }
     }
   }
@@ -2999,7 +3024,26 @@
       y: RULER_TOP + heightInP(originY + posY - 1)
     };
   }
-  function setWindowForFormat(chosenFormat) {
+  function clampAbsolutePositionToField(boxPos, opts = {}) {
+    const snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
+    const screen = gridCordsToFieldCords(snapped.x, snapped.y);
+    let rawX = screen.x;
+    let rawY = screen.y;
+    if (activeWindowOrigin?.originX != null && activeWindowOrigin?.originY != null) {
+      rawX = screen.x - (activeWindowOrigin.originX - 1);
+      rawY = screen.y - (activeWindowOrigin.originY - 1);
+    }
+    const bounds = currentPositionBounds();
+    const position = screenToFieldPosition(screen.x, screen.y, opts);
+    return {
+      position,
+      bounds,
+      rawX,
+      rawY,
+      pixels: fieldPositionToPixels(position)
+    };
+  }
+  function setWindowForFormat(chosenFormat, opts = {}) {
     let cols = 80;
     let rows = 24;
     const formatChanged = chosenFormat !== lastSelectedFormat;
@@ -3120,6 +3164,9 @@
         const groups = fieldLayer.find(`Group`);
         groups.forEach((g) => {
           if (g.id() === `` || g.id().startsWith(`sub_`) || g.id().startsWith(`win_`)) {
+            return;
+          }
+          if (g.getAttr(`ddsOverlay`)) {
             return;
           }
           const rect = g.getClientRect();
@@ -3270,8 +3317,7 @@
           return;
         }
         const field = findFieldByName(fieldName);
-        const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === fieldName) || [];
-        const group = matches[0];
+        const group = findFieldGroup(fieldName);
         if (field && group) {
           void setActiveField(group, field);
         }
@@ -3279,35 +3325,41 @@
     );
     syncFormatTabActive(chosenFormat);
     clearSelection(false);
-    if (hasDirtyFieldEdits()) {
+    const keepDirty = opts.keepDirtyFieldEdits === true && !formatChanged;
+    let keptDirtySelection = false;
+    if (keepDirty && hasDirtyFieldEdits()) {
       pendingSelectionNames = [];
       const name = dirtyFieldName();
-      if (name) {
-        const field = findFieldByName(name);
-        const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
-        const group = matches[0];
-        if (field && group) {
-          addToSelection(group, field, false);
-        }
+      const field = name ? findFieldByName(name) : void 0;
+      const group = name ? findFieldGroup(name) : void 0;
+      if (field && group) {
+        addToSelection(group, field, false);
+        keptDirtySelection = true;
+      } else {
+        clearFieldEditController();
       }
-    } else if (pendingSelectionNames.length > 0) {
-      const names = [...pendingSelectionNames];
-      pendingSelectionNames = [];
-      names.forEach((name) => {
-        const field = findFieldByName(name);
-        const matches = fieldLayer?.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
-        const group = matches[0];
-        if (field && group) {
-          addToSelection(group, field, false);
+    } else if (hasDirtyFieldEdits()) {
+      clearFieldEditController();
+    }
+    if (!keptDirtySelection) {
+      if (pendingSelectionNames.length > 0) {
+        const names = [...pendingSelectionNames];
+        pendingSelectionNames = [];
+        names.forEach((name) => {
+          const field = findFieldByName(name);
+          const group = findFieldGroup(name);
+          if (field && group) {
+            addToSelection(group, field, false);
+          }
+        });
+        updateSelectionUi({ silent: true });
+      } else if (editorMode === `design`) {
+        openDesignPalette();
+      } else {
+        const sidebar = document.getElementById(`fieldInfoSidebar`);
+        if (sidebar) {
+          sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
         }
-      });
-      updateSelectionUi({ silent: true });
-    } else if (editorMode === `design`) {
-      openDesignPalette();
-    } else {
-      const sidebar = document.getElementById(`fieldInfoSidebar`);
-      if (sidebar) {
-        sidebar.innerHTML = `<div style="padding:1em;opacity:0.7">Preview mode (read-only)</div>`;
       }
     }
     if (formatChanged) {
@@ -3513,7 +3565,7 @@
           const charH = Math.max(3, Math.round(winRect.height() / pxhPerLine));
           const startRow = windowConfig.baseY;
           const startCol = windowConfig.baseX;
-          const kws = JSON.parse(JSON.stringify(format.keywords || []));
+          const kws = liveFormatKeywords(format.name, format.keywords || []);
           const wi = kws.findIndex((k) => k.name === `WINDOW`);
           const value = `${startRow} ${startCol} ${charH} ${charW}`;
           if (wi >= 0) {
@@ -3618,6 +3670,9 @@
       }
       const content = getElement(field, displayOnly || editorMode === `preview`, windowOrigin);
       if (content) {
+        if (displayOnly) {
+          content.setAttr(`ddsOverlay`, true);
+        }
         if (!canDisplay && editorMode === `design`) {
           content.opacity(0.35);
         }
@@ -3787,45 +3842,27 @@
     const dragLength = fieldContentLength(fieldInfo);
     group.on("dragmove", (e) => {
       const cGroup = e.target;
-      const boxPos = cGroup.absolutePosition();
-      let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
-      const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
-      const hitRight = snapped.x > widthInP(maxStartCol - 1);
-      const hitBottom = snapped.y > heightInP(renderRows - 1);
-      snapped = {
-        x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
-        y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1))
-      };
-      cGroup.absolutePosition({
-        x: snapped.x + RULER_LEFT,
-        y: snapped.y + RULER_TOP
+      const clamped = clampAbsolutePositionToField(cGroup.absolutePosition(), {
+        wasY0: fieldInfo.position.y === 0,
+        length: dragLength
       });
-      if (hitRight) {
+      cGroup.absolutePosition(clamped.pixels);
+      if (clamped.rawX > clamped.position.x) {
         showDesignError(
-          `Content past record length of ${renderCols} (length ${dragLength}).`
+          `Content past record length of ${clamped.bounds.maxX} (length ${dragLength}).`
         );
-      } else if (hitBottom) {
-        showDesignError(`Row must be between 1 and ${renderRows}.`);
+      } else if (fieldInfo.position.y !== 0 && clamped.rawY > clamped.position.y) {
+        showDesignError(`Row must be between 1 and ${clamped.bounds.maxY}.`);
       }
     });
     group.on(`dragend`, (e) => {
       const cGroup = e.target;
-      const boxPos = cGroup.absolutePosition();
-      let snapped = snapToFixedGrid(boxPos.x - RULER_LEFT, boxPos.y - RULER_TOP);
-      const maxStartCol = maxStartColumnForLength(renderCols, dragLength);
-      snapped = {
-        x: Math.min(Math.max(0, snapped.x), widthInP(maxStartCol - 1)),
-        y: Math.min(Math.max(0, snapped.y), heightInP(renderRows - 1))
-      };
-      cGroup.absolutePosition({
-        x: snapped.x + RULER_LEFT,
-        y: snapped.y + RULER_TOP
-      });
-      const screen = gridCordsToFieldCords(snapped.x, snapped.y);
-      const newPos = screenToFieldPosition(screen.x, screen.y, {
+      const clamped = clampAbsolutePositionToField(cGroup.absolutePosition(), {
         wasY0: fieldInfo.position.y === 0,
         length: dragLength
       });
+      cGroup.absolutePosition(clamped.pixels);
+      const newPos = clamped.position;
       const dx = newPos.x - fieldInfo.position.x;
       const dy = fieldInfo.position.y === 0 ? 0 : newPos.y - fieldInfo.position.y;
       const moving = selectedItems.some((s) => s.field.name === fieldInfo.name) && selectedItems.length > 1 ? selectedItems : [{ group: cGroup, field: fieldInfo }];
@@ -3946,6 +3983,13 @@
     }
     const format = activeDocument.formats.find((f) => f.name === lastSelectedFormat);
     return format?.fields.find((f) => f.name === name);
+  }
+  function findFieldGroup(name) {
+    if (!name || !fieldLayer) {
+      return void 0;
+    }
+    const matches = fieldLayer.find((node) => node.getClassName() === `Group` && node.id() === name) || [];
+    return matches[0];
   }
   function currentFormatFields() {
     if (!activeDocument || !lastSelectedFormat) {
@@ -4674,7 +4718,7 @@
         if (!format) {
           return;
         }
-        const visible = format.fields.filter((f) => f.displayType !== `hidden`);
+        const visible = format.fields.filter((f) => f.displayType !== `hidden` && f.name);
         if (visible.length === 0) {
           return;
         }
@@ -4682,7 +4726,7 @@
         let idx = visible.findIndex((f) => f.name === currentName);
         idx = e.shiftKey ? (idx - 1 + visible.length) % visible.length : (idx + 1) % visible.length;
         const next = visible[idx];
-        const group = fieldLayer?.findOne(`#${next.name}`);
+        const group = findFieldGroup(next.name);
         if (group) {
           void setActiveField(group, next);
         }
@@ -5059,6 +5103,7 @@
         break;
       case `editFailed`:
         announce(event.data.reason || `Edit failed`);
+        clearFieldEditController();
         break;
       case `requestInputResult`:
         resolveHostDialog(event.data.requestId, event.data.value);
@@ -5075,6 +5120,14 @@
       case `flushPendingEdits`:
         flushPendingEdits();
         break;
+    }
+  });
+  window.addEventListener(`pagehide`, () => {
+    flushPendingEdits();
+  });
+  document.addEventListener(`visibilitychange`, () => {
+    if (document.visibilityState === `hidden`) {
+      flushPendingEdits();
     }
   });
   window.onload = () => {

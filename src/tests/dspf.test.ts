@@ -281,6 +281,11 @@ describe('DisplayFile tests', () => {
     expect(amt).toBeDefined();
     expect(amt!.position.x).toBe(25);
     expect(amt!.position.y).toBe(0);
+    expect(amt!.length).toBe(7);
+    expect(amt!.decimals).toBe(2);
+    expect(amt!.type).toBeUndefined();
+    const emitted = DisplayFile.getLinesForField(amt!);
+    expect(emitted[0]).toMatch(/7  2/);
   });
 
   it('preserves blank field type (never emits A 0)', () => {
@@ -589,6 +594,24 @@ describe('DisplayFile tests', () => {
     expect(dds.updateField(`FORM1`, `GHOST`, field)).toBeUndefined();
   });
 
+  it('updateField rename to an existing peer name is rejected', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            FLD1          5A  O  1  2`,
+      `     A            FLD2          5A  O  2  2`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld1 = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `FLD1`)!;
+    const renamed = FieldInfo.fromData({ ...fld1, name: `FLD2` });
+    expect(dds.updateField(`FORM1`, `FLD1`, renamed)).toBeUndefined();
+
+    fld1.position = { x: 4, y: 1 };
+    const sameName = dds.updateField(`FORM1`, `FLD1`, fld1);
+    expect(sameName?.range).toBeDefined();
+    expect(sameName!.newLines.some(l => l.includes(`FLD1`))).toBe(true);
+  });
+
   it('splitDocumentLines drops trailing empty from final EOL', () => {
     const lines = splitDocumentLines(`A\nB\n`);
     expect(lines).toEqual([`A`, `B`]);
@@ -630,6 +653,47 @@ describe('DisplayFile tests', () => {
     const form = dds.formats.find(f => f.name === `DETAIL`);
     expect(form!.fields.length).toBeGreaterThanOrEqual(1);
     expect(form!.fields[0].position.x).toBe(5);
+  });
+
+  it('resolves +n after a named field using field length, including when row is set', () => {
+    const named = DisplayFile.getLinesForField(FieldInfo.fromData({
+      name: `NAME`,
+      type: `A`,
+      length: 10,
+      displayType: `output`,
+      position: { x: 1, y: 1 },
+    }))[0];
+    const relative = `${`     A`.padEnd(38)}  1 +2 'X'`;
+    const lines = [
+      `     A          R DETAIL`,
+      named,
+      relative,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const nameField = dds.formats.find(f => f.name === `DETAIL`)!.fields.find(f => f.name === `NAME`)!;
+    expect(nameField.length).toBe(10);
+    const text = dds.formats.find(f => f.name === `DETAIL`)!.fields.find(f => f.displayType === `const`)!;
+    // NAME at col 1 length 10, then +2 from the end → 13
+    expect(text.position.x).toBe(13);
+    expect(text.position.y).toBe(1);
+  });
+
+  it('re-emits unpositioned P fields and blank columns as spaces, not -1 or 0', () => {
+    const pgmLine = `${`     A            PGMFLD         5A  P`.padEnd(80)}`;
+    const lines = [
+      `     A          R FORM1`,
+      pgmLine,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const pgm = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `PGMFLD`)!;
+    expect(pgm.displayType).toBe(`program`);
+    expect(pgm.position.x).toBeLessThanOrEqual(0);
+    expect(pgm.position.y).toBeLessThanOrEqual(0);
+    const generated = DisplayFile.getLinesForField(pgm);
+    expect(generated[0].substring(38, 44)).toBe(`      `);
+    expect(generated[0]).not.toMatch(/-1/);
   });
 
   it('updates display type, length, and data type on a named field', () => {
@@ -761,9 +825,55 @@ describe('DisplayFile tests', () => {
     const time1 = form.fields.find(f => f.name === `TIME1`)!;
 
     expect(date1.type).toBe(`L`);
+    expect(date1.length).toBe(8);
     expect(date1.keywords.map(k => k.name)).toEqual([`DATFMT`]);
     expect(time1.type).toBe(`T`);
     expect(time1.keywords.map(k => k.name)).toEqual([`TIMFMT`]);
+  });
+
+  it('keeps *ISO date length 10 on L/T parse and emit', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            DATE1         10L  O  1  1`,
+      `     A                                      DATFMT(*ISO)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const date1 = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `DATE1`)!;
+    expect(date1.length).toBe(10);
+    const generated = DisplayFile.getLinesForField(date1);
+    expect(generated[0].substring(29, 34)).toMatch(/10/);
+    expect(generated[0][34]).toBe(`L`);
+  });
+
+  it('emits 10A + REFFLD without forcing type R', () => {
+    const lines = [
+      `     A          R FORM1`,
+      `     A            CUSTNAME      10A  O  2  5`,
+      `     A                                      REFFLD(NAME CUSTFILE)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const field = dds.formats.find(f => f.name === `FORM1`)!.fields.find(f => f.name === `CUSTNAME`)!;
+    expect(field.isReference).toBe(true);
+    expect(field.type).toBe(`A`);
+    const generated = DisplayFile.getLinesForField(field);
+    expect(generated[0][34]).toBe(`A`);
+    expect(generated.some(l => l.includes(`REFFLD(NAME CUSTFILE)`))).toBe(true);
+  });
+
+  it('round-trips WINDOW(*DFT height width)', () => {
+    const lines = [
+      `     A          R WIN1`,
+      `     A                                      WINDOW(*DFT 10 50)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const win = dds.formats.find(f => f.name === `WIN1`)!;
+    expect(win.isWindow).toBe(true);
+    const update = dds.updateFormatHeader(`WIN1`, win.keywords)!;
+    const next = dds.applyUpdateToLines(lines, update);
+    expect(next.some(l => /WINDOW\(\*DFT\s+10\s+50\)/.test(l))).toBe(true);
   });
 
   it('does not emit DATE/TIME stubs on typed L/T fields', () => {
@@ -812,5 +922,125 @@ describe('DisplayFile tests', () => {
     const lines = DisplayFile.getLinesForField(field);
     expect(lines.some(l => l.trimEnd().endsWith(`TIME`))).toBe(true);
     expect(lines.some(l => l.includes(`TIMFMT(*HMS)`))).toBe(true);
+    expect(lines.some(l => l.includes(`''`))).toBe(false);
+  });
+
+  it('round-trips TEXT with quoted parentheses and sample WDWTITLE', () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A            FLD1         10A  B  3  5`,
+      `     A                                      TEXT('Customer (active)')`,
+      `     A          R WIN1`,
+      `     A                                      WINDOW(4 10 12 60)`,
+      `     A                                      WDWTITLE((*TEXT 'Customer Subfile'))`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `HEAD`)!.fields.find(f => f.name === `FLD1`)!;
+    const textKw = fld.keywords.find(k => k.name === `TEXT`);
+    expect(textKw?.value).toContain(`(active)`);
+    const generated = DisplayFile.getLinesForField(fld);
+    expect(generated.some(l => l.includes(`TEXT('Customer (active)')`))).toBe(true);
+
+    const win = dds.formats.find(f => f.name === `WIN1`)!;
+    const title = win.keywords.find(k => k.name === `WDWTITLE`);
+    expect(title?.value).toBe(`(*TEXT 'Customer Subfile')`);
+    const header = DisplayFile.getHeaderLinesForFormat(win.name, win.keywords);
+    expect(header.some(l => l.includes(`WDWTITLE((*TEXT 'Customer Subfile'))`))).toBe(true);
+  });
+
+  it('round-trips CONST doubled apostrophes', () => {
+    const lines = [
+      `     A          R HEAD`,
+      `     A                                  1  2'O''Brien'`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const cst = dds.formats.find(f => f.name === `HEAD`)!.fields.find(f => f.displayType === `const`)!;
+    expect(cst.value).toBe(`O'Brien`);
+    const generated = DisplayFile.getLinesForField(cst);
+    expect(generated[0]).toContain(`'O''Brien'`);
+  });
+
+  it('keeps option indicators on wrapped TEXT keywords', () => {
+    const long = `X`.repeat(40);
+    const field = FieldInfo.fromData({
+      name: `FLD1`,
+      type: `A`,
+      length: 5,
+      displayType: `both`,
+      position: { x: 1, y: 1 },
+      keywords: [{ name: `TEXT`, value: `'${long}'`, conditions: [{ indicator: 20, negate: false }] }],
+    });
+    const emitted = DisplayFile.getLinesForField(field);
+    expect(emitted.length).toBeGreaterThan(1);
+    const dds = new DisplayFile();
+    dds.parse([`     A          R HEAD`, ...emitted]);
+    const parsed = dds.formats.find(f => f.name === `HEAD`)!.fields.find(f => f.name === `FLD1`)!;
+    const textKw = parsed.keywords.find(k => k.name === `TEXT`);
+    expect(textKw?.conditions[0]?.indicator).toBe(20);
+  });
+
+  it('does not parse SEU source-date columns as keywords', () => {
+    const generated = DisplayFile.getLinesForField(FieldInfo.fromData({
+      name: `FLD1`,
+      type: `A`,
+      length: 5,
+      displayType: `both`,
+      position: { x: 2, y: 1 },
+      keywords: [{ name: `COLOR`, value: `BLU`, conditions: [] }],
+    }));
+    const colorLine = generated.find(l => l.includes(`COLOR`))!;
+    const lines = [
+      `     A          R HEAD`,
+      generated[0],
+      `${colorLine.padEnd(80)}250817`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const fld = dds.formats.find(f => f.name === `HEAD`)!.fields.find(f => f.name === `FLD1`)!;
+    expect(fld.keywords.some(k => k.name === `COLOR`)).toBe(true);
+    expect(fld.keywords.some(k => /250817/.test(k.name) || /250817/.test(k.value || ``))).toBe(false);
+    expect(DisplayFile.getLinesForField(fld).some(l => l.includes(`250817`))).toBe(false);
+  });
+
+  it('renameFormat skips comments and quoted TEXT, retargets WINDOW, ignores SFLMSGRCD', () => {
+    const lines = [
+      `     A          R SFL01`,
+      `     A                                      SFL`,
+      `     A          R CTL01`,
+      `     A                                      SFLCTL(SFL01)`,
+      `     A                                      WINDOW(SFL01)`,
+      `     A* remember SFLCTL(SFL01) here`,
+      `     A                                      TEXT('Uses SFLCTL(SFL01)')`,
+      `     A          R MSGSFL`,
+      `     A                                      SFLMSGRCD(SFL01)`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const renamed = dds.renameFormat(`SFL01`, `SFL99`)!;
+    let after = [...lines];
+    for (const u of [...renamed].sort((a, b) => b.range!.start - a.range!.start)) {
+      after = dds.applyUpdateToLines(after, u);
+    }
+    expect(after.some(l => /R\s+SFL99/.test(l))).toBe(true);
+    expect(after.some(l => l.includes(`SFLCTL(SFL99)`))).toBe(true);
+    expect(after.some(l => l.includes(`WINDOW(SFL99)`))).toBe(true);
+    expect(after.some(l => l.includes(`A* remember SFLCTL(SFL01)`))).toBe(true);
+    expect(after.some(l => l.includes(`TEXT('Uses SFLCTL(SFL01)')`))).toBe(true);
+    expect(after.some(l => l.includes(`SFLMSGRCD(SFL01)`))).toBe(true);
+  });
+
+  it('preserves printer blank usage (col 38) instead of emitting O', () => {
+    const lines = [
+      `     A          R DETAIL`,
+      `     A            AMT           7  2     25`,
+    ];
+    const dds = new DisplayFile();
+    dds.parse(lines);
+    const amt = dds.formats.find(f => f.name === `DETAIL`)!.fields.find(f => f.name === `AMT`)!;
+    amt.keywords = [{ name: `EDTCDE`, value: `1`, conditions: [] }];
+    const generated = DisplayFile.getLinesForField(amt);
+    expect(generated[0][37]).toBe(` `);
   });
 });

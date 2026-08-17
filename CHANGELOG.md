@@ -53,6 +53,37 @@ documented here. The format loosely follows
 - Leaving a field while its Properties / Keywords panel has un-applied edits
   now prompts to **Save**, **Don't Save**, or cancel, instead of silently
   discarding the form.
+- Tab cycling looks up canvas groups by literal field id so names with
+  `#` / `@` / `$` are not skipped; WINDOW live-drag clamps to the window,
+  not the full screen; host reports failed lookups instead of no-op;
+  new record formats select the requested tab after insert; renaming a
+  field onto an existing peer name is rejected.
+- Date/time (`L`/`T`) fields keep their DDS length (`10L` *ISO stays 10);
+  `10A` + `REFFLD` no longer re-emits as type `R`; typeless printer decimals
+  round-trip; `WINDOW(*DFT h w)` validates; bulk field insert cannot target
+  `_GLOBAL`; REF length lookup retries after reconnect; IFS protected-path
+  matching no longer treats `/home/foo` as covering `/home/foobar`; overlay
+  marquee ignores overlay groups; WINDOW drag-end uses the same clamp as
+  live drag.
+- Closing the designer no longer applies leftover WorkspaceEdits after
+  **Don't Save**; a no-op applyEdit cannot swallow the next text-editor
+  change; the webview flushes nudges/properties on hide; a host `load` /
+  `editFailed` drops a stale Properties form so it cannot overwrite good
+  DDS; printer `+n` with a row uses the previous field's length; blank
+  and unpositioned columns re-emit as spaces, not `0` / `-1`.
+- Designer edits reparse the live TextDocument when its version drifted
+  (side-by-side source typing no longer overwrites comments with stale
+  field line numbers). Keyword values cannot contain CR/LF/TAB, so a
+  pasted `WDWTITLE`/`TEXT` cannot inject extra record lines.
+- Format Apply window / WINDOW resize / SFL Apply upsert onto the live
+  Format Keywords list so a pending COLOR is not deleted. Property Apply
+  keeps option indicators past the three slots. Rename no longer rewrites
+  comments or quoted TEXT, retargets `WINDOW(record)`, and leaves
+  `SFLMSGRCD` (a line number) alone. Quoted parentheses in `TEXT` /
+  `WDWTITLE` round-trip (including the sample subfile title). CONST `''`
+  apostrophes, wrapped-keyword indicators, DATE/SYSNAME constants without
+  injected `''`, SEU columns 81+, unpositioned `x<=0`, and printer blank
+  usage (col 38) are preserved.
 
 ### Removed
 

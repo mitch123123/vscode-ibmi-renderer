@@ -74,6 +74,21 @@ describe("validateFieldScreenFit", () => {
       ),
     ).toMatch(/past record length/);
   });
+
+  it("allows blank column x<=0 (unpositioned P/H/M)", () => {
+    expect(
+      validateFieldScreenFit(
+        { position: { x: 0, y: 0 }, length: 5, displayType: `program` },
+        { maxX: 80, maxY: 24 },
+      ),
+    ).toBeUndefined();
+    expect(
+      validateFieldScreenFit(
+        { position: { x: -1, y: -1 }, length: 5, displayType: `program` },
+        { maxX: 80, maxY: 24 },
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("field overlap", () => {
@@ -142,13 +157,37 @@ describe("editValidation", () => {
     ).toMatch(/Length must be/);
   });
 
-  it("allows y=0 and blank length", () => {
+  it("allows y=0, x<=0, and blank length", () => {
     expect(
       validateFieldEditPayload({
         name: `AMT`,
         displayType: `output`,
         position: { x: 25, y: 0 },
         decimals: 2,
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      }),
+    ).toBeUndefined();
+    expect(
+      validateFieldEditPayload({
+        name: `PGMFLD`,
+        displayType: `program`,
+        position: { x: 0, y: 0 },
+        length: 5,
+        decimals: 0,
+        conditions: [],
+        keywords: [],
+        startRange: 0,
+      }),
+    ).toBeUndefined();
+    expect(
+      validateFieldEditPayload({
+        name: `PGMFLD`,
+        displayType: `program`,
+        position: { x: -1, y: -1 },
+        length: 5,
+        decimals: 0,
         conditions: [],
         keywords: [],
         startRange: 0,
@@ -177,6 +216,14 @@ describe("editValidation", () => {
     expect(
       validateFormatKeywords([{ name: `WINDOW`, value: `5 10 12 40`, conditions: [] }]),
     ).toBeUndefined();
+
+    expect(
+      validateFormatKeywords([{ name: `WINDOW`, value: `*DFT 10 50`, conditions: [] }]),
+    ).toBeUndefined();
+
+    expect(
+      validateFormatKeywords([{ name: `WINDOW`, value: `HEAD`, conditions: [] }]),
+    ).toBeUndefined();
   });
 
   it("rejects unsafe keyword names and values", () => {
@@ -187,10 +234,16 @@ describe("editValidation", () => {
     expect(
       validateFormatKeywords([{ name: `BAD NAME`, value: `x`, conditions: [] }]),
     ).toMatch(/Invalid keyword name/);
+    expect(
+      validateKeyword({ name: `TEXT`, value: `Hello\n     A          R INJECT`, conditions: [] }),
+    ).toMatch(/invalid characters/i);
+    expect(
+      validateFormatKeywords([{ name: `WDWTITLE`, value: `Hi\r\nthere`, conditions: [] }]),
+    ).toMatch(/invalid characters/i);
   });
 
   it("rejects const values that would break DDS string literals", () => {
-    expect(validateConstValue(`O'Brien`)).toMatch(/single quote/);
+    expect(validateConstValue(`O'Brien`)).toBeUndefined();
     expect(validateConstValue(`line\nbreak`)).toMatch(/invalid characters/i);
     expect(
       validateFieldEditPayload({
@@ -202,7 +255,7 @@ describe("editValidation", () => {
         keywords: [],
         startRange: 0,
       }),
-    ).toMatch(/single quote/);
+    ).toBeUndefined();
   });
 
   it("sanitizes dialog strings", () => {

@@ -9,6 +9,7 @@ import {
   clearKeywordEditor,
   getKeywordPanelApi,
   isKeywordEditorOpen,
+  liveFormatKeywords,
   tryCommitKeywordEditor,
 } from "./keywordEditor.js";
 import { renderPalette } from "./palette.js";
@@ -72,7 +73,7 @@ function parsePositiveInt(raw, label) {
 }
 
 /**
- * WINDOW value: four positive integers (`row col height width`) or a record name.
+ * WINDOW value: four positive integers (`row col height width`), `*DFT height width`, or a record name.
  * @param {string} raw
  * @returns {string|undefined} error message, or undefined if valid
  */
@@ -88,8 +89,16 @@ export function validateWindowValue(raw) {
     }
     return undefined;
   }
+  if (parts.length === 3 && parts[0].toUpperCase() === `*DFT`) {
+    for (const p of parts.slice(1)) {
+      if (!/^\d+$/.test(p) || Number(p) < 1) {
+        return `WINDOW *DFT height and width must be positive integers.`;
+      }
+    }
+    return undefined;
+  }
   if (parts.length !== 4) {
-    return `WINDOW must be four positive integers (row col height width) or a record-format name.`;
+    return `WINDOW must be four positive integers (row col height width), *DFT height width, or a record-format name.`;
   }
   for (const p of parts) {
     if (!/^\d+$/.test(p) || Number(p) < 1) {
@@ -231,7 +240,7 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
         return;
       }
       /** @type {Keyword[]} */
-      const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
+      const next = liveFormatKeywords(recordInfo.name, recordInfo.keywords || []);
       const upsert = (name, value) => {
         const i = next.findIndex((k) => k.name === name);
         if (i >= 0) {
@@ -302,7 +311,7 @@ export function updateRecordFormatSidebar(recordInfo, globalInfo, allFormats, ov
         return;
       }
       /** @type {Keyword[]} */
-      const next = JSON.parse(JSON.stringify(recordInfo.keywords || []));
+      const next = liveFormatKeywords(recordInfo.name, recordInfo.keywords || []);
       const upsert = (name, value) => {
         const i = next.findIndex((k) => k.name === name);
         if (i >= 0) {
@@ -563,7 +572,8 @@ function normalizeFieldProps(fieldInfo, newProps) {
   const c2 = parseCond(newProps.cond2);
   const c3 = parseCond(newProps.cond3);
   if (newProps.cond1 !== undefined || newProps.cond2 !== undefined || newProps.cond3 !== undefined) {
-    next.conditions = [c1, c2, c3].filter(Boolean);
+    const extras = (fieldInfo.conditions || []).slice(3);
+    next.conditions = [c1, c2, c3].filter(Boolean).concat(extras);
   }
 
   return { ok: true, field: next };

@@ -89,6 +89,17 @@ export function validateFieldScreenFit(field, bounds) {
   const y = field.position.y;
   const len = fieldContentLength(field);
 
+  // x <= 0: blank column (unpositioned / printer) — skip screen-fit width checks.
+  if (Number.isInteger(x) && x <= 0) {
+    if (Number.isInteger(y) && y <= 0) {
+      return undefined;
+    }
+    if (y !== 0 && (!Number.isInteger(y) || y < 0 || y > maxY)) {
+      return `Row must be an integer from 0 to ${maxY}.`;
+    }
+    return undefined;
+  }
+
   if (!Number.isInteger(x) || x < 1) {
     return `Column must be an integer from 1 to ${maxX}.`;
   }

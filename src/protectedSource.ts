@@ -70,6 +70,15 @@ function filterMarkedProtected(filter: BrowserProtectionNode[`filter`]): boolean
   return typeof filter === `object` && !!filter?.protected;
 }
 
+/** True when `uriPath` is exactly `protectedPath` or a nested path under it (not a sibling prefix). */
+export function uriPathMatchesProtectedPath(uriPath: string, protectedPath: string): boolean {
+  if (uriPath === protectedPath) {
+    return true;
+  }
+  const prefix = protectedPath.endsWith(`/`) ? protectedPath : `${protectedPath}/`;
+  return uriPath.startsWith(prefix);
+}
+
 /**
  * True when Code for IBM i considers this source protected (filter / path /
  * connection browse / readonly URI) and it must not open in the designer.
@@ -130,12 +139,7 @@ export async function isProtectedDdsSource(
       return true;
     }
     if (
-      config?.protectedPaths?.some(
-        (p) =>
-          uri.path === p ||
-          uri.path.startsWith(p.endsWith(`/`) ? p : `${p}/`) ||
-          uri.path.startsWith(p)
-      )
+      config?.protectedPaths?.some((p) => uriPathMatchesProtectedPath(uri.path, p))
     ) {
       return true;
     }
