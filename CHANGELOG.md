@@ -8,7 +8,9 @@ documented here. The format loosely follows
 
 ### Changed
 
-- Publisher id is `mitchellfiedler` (Marketplace listing `mitchellfiedler.dds-designer`).
+- Designer chrome: spacing tokens, rounded controls, Design/Preview segmented
+  switch, cursor pill, two-column field palette, indicator chips, and
+  codicon collapse buttons. 5250 canvas and rulers are unchanged.
 - Merging to `main` publishes to the VS Code Marketplace after CI is green, when
   `package.json` version has no matching `v*` git tag (`VSCE_PAT` required).
 - Published as **IBM i DDS Designer** (`mitchellfiedler.dds-designer`). Command

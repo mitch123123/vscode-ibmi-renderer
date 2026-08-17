@@ -215,8 +215,6 @@ function appendTextField(parent, label, id, value, placeholder) {
   if (placeholder) {
     input.setAttribute(`placeholder`, placeholder);
   }
-  input.style.width = `100%`;
-  input.style.marginBottom = `0.5em`;
   parent.appendChild(input);
   return input;
 }
@@ -249,6 +247,9 @@ export function renderPalette(sidebar, onClickCreate, opts = {}) {
   appendHeading(sidebar, `Add field`);
   appendHint(sidebar, `Drag onto the screen or click to add at 1,1`);
 
+  const grid = document.createElement(`div`);
+  grid.className = `palette-grid`;
+
   for (const item of paletteItems) {
     const button = document.createElement(`vscode-button`);
     button.setAttribute(`secondary`, `true`);
@@ -271,8 +272,9 @@ export function renderPalette(sidebar, onClickCreate, opts = {}) {
 
     button.onclick = () => onClickCreate(item.field());
 
-    sidebar.appendChild(button);
+    grid.appendChild(button);
   }
+  sidebar.appendChild(grid);
 
   if (!onCreateRecord) {
     return;
@@ -281,7 +283,7 @@ export function renderPalette(sidebar, onClickCreate, opts = {}) {
   // Database fields (SDA F10)
   if (opts.onBrowseDatabase) {
     const dbDivider = document.createElement(`vscode-divider`);
-    dbDivider.style.margin = `0.75em 0`;
+    dbDivider.className = `palette-divider`;
     sidebar.appendChild(dbDivider);
     appendHeading(sidebar, `Database fields`);
     appendHint(sidebar, `Browse a PF/LF via Code for IBM i and place REFFLD fields (SDA F10).`);
@@ -295,7 +297,7 @@ export function renderPalette(sidebar, onClickCreate, opts = {}) {
   }
 
   const divider = document.createElement(`vscode-divider`);
-  divider.style.margin = `0.75em 0`;
+  divider.className = `palette-divider`;
   sidebar.appendChild(divider);
 
   appendHeading(sidebar, `Add record`);

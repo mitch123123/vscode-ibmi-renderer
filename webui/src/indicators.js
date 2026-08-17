@@ -41,56 +41,46 @@ export function clearAllIndicators() {
 }
 
 /**
+ * @param {HTMLButtonElement} chip
+ * @param {number} indicator
+ * @param {boolean} on
+ */
+function syncChip(chip, indicator, on) {
+  chip.classList.toggle(`active`, on);
+  chip.setAttribute(`aria-pressed`, on ? `true` : `false`);
+  chip.title = `Indicator ${String(indicator).padStart(2, `0`)}`;
+}
+
+/**
  * @param {HTMLElement} container
  */
 export function renderIndicatorPanel(container) {
   container.innerHTML = ``;
 
-  const title = document.createElement(`div`);
-  title.style.padding = `0.5em`;
-  title.style.fontWeight = `bold`;
-  title.innerText = `Indicators`;
-  container.appendChild(title);
-
   const grid = document.createElement(`div`);
   grid.className = `indicator-grid`;
-  grid.style.display = `grid`;
-  grid.style.gridTemplateColumns = `repeat(5, 1fr)`;
-  grid.style.gap = `2px`;
-  grid.style.padding = `0.5em`;
-  grid.style.maxHeight = `200px`;
-  grid.style.overflowY = `auto`;
 
   for (let i = 1; i <= 99; i++) {
-    const label = document.createElement(`label`);
-    label.style.fontSize = `11px`;
-    label.style.display = `flex`;
-    label.style.alignItems = `center`;
-    label.style.gap = `2px`;
-    label.title = `Indicator ${i}`;
-
-    const cb = document.createElement(`input`);
-    cb.type = `checkbox`;
-    cb.checked = activeIndicators.has(i);
-    cb.addEventListener(`change`, () => {
-      setIndicator(i, cb.checked);
+    const chip = document.createElement(`button`);
+    chip.type = `button`;
+    chip.className = `indicator-chip`;
+    chip.textContent = String(i).padStart(2, `0`);
+    const on = activeIndicators.has(i);
+    syncChip(chip, i, on);
+    chip.addEventListener(`click`, () => {
+      const next = !activeIndicators.has(i);
+      setIndicator(i, next);
+      syncChip(chip, i, next);
     });
-
-    const span = document.createElement(`span`);
-    span.innerText = String(i).padStart(2, `0`);
-
-    label.appendChild(cb);
-    label.appendChild(span);
-    grid.appendChild(label);
+    grid.appendChild(chip);
   }
 
   container.appendChild(grid);
 
   const clearBtn = document.createElement(`vscode-button`);
   clearBtn.setAttribute(`secondary`, `true`);
+  clearBtn.className = `indicator-clear`;
   clearBtn.innerText = `Clear all`;
-  clearBtn.style.margin = `0.5em`;
-  clearBtn.style.display = `block`;
   clearBtn.addEventListener(`click`, () => {
     activeIndicators = new Set();
     renderIndicatorPanel(container);

@@ -22,13 +22,15 @@
     </div>
     <div class="toolbar-actions">
       <span id="cursorBadge" class="badge"></span>
-      <span id="modeBadge" class="badge">Design</span>
       <select id="screenSizeSelect" title="Screen size" aria-label="Screen size">
         <option value="auto">Size: Auto (DDS)</option>
         <option value="ds3">24 × 80 (*DS3)</option>
         <option value="ds4">27 × 132 (*DS4)</option>
       </select>
-      <vscode-button id="modeToggle" secondary>Design / Preview</vscode-button>
+      <div class="mode-switch" role="group" aria-label="Editor mode">
+        <button type="button" id="modeDesign" class="mode-switch-btn active" aria-pressed="true">Design</button>
+        <button type="button" id="modePreview" class="mode-switch-btn" aria-pressed="false">Preview</button>
+      </div>
     </div>
   </div>
 
@@ -37,13 +39,13 @@
       <div class="sidebar-header">
         <span class="sidebar-header-title">Format</span>
         <button type="button" id="collapseLeftSidebar" class="sidebar-collapse-btn" title="Minimize left panel" aria-label="Minimize left panel">
-          ◀
+          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
         </button>
       </div>
       <div id="recordFormatSidebar" class="sidebar-body"></div>
     </aside>
     <button type="button" id="expandLeftSidebar" class="sidebar-rail left" title="Show format tools" aria-label="Show format tools" hidden>
-      ▶
+      <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
     </button>
     <div id="leftSplitter" class="splitter vertical" role="separator" aria-orientation="vertical" aria-label="Resize format panel" tabindex="0"></div>
 
@@ -57,12 +59,12 @@
 
     <div id="rightSplitter" class="splitter vertical" role="separator" aria-orientation="vertical" aria-label="Resize fields panel" tabindex="0"></div>
     <button type="button" id="expandRightSidebar" class="sidebar-rail right" title="Show field tools" aria-label="Show field tools" hidden>
-      ◀
+      <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
     </button>
     <aside id="rightSidebar" class="sidebar right" aria-label="Field tools">
       <div class="sidebar-header">
         <button type="button" id="collapseRightSidebar" class="sidebar-collapse-btn" title="Minimize right panel" aria-label="Minimize right panel">
-          ▶
+          <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
         </button>
         <span class="sidebar-header-title">Fields</span>
         <div class="sidebar-header-actions" role="group" aria-label="Fields panel position">
