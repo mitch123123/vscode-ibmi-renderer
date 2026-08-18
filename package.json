@@ -2,7 +2,7 @@
   "name": "dds-designer",
   "displayName": "IBM i DDS Designer",
   "description": "Visual designer for IBM i display and printer files (DDS). Fork of the Code for IBM i designer.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "mitchellfiedler",
   "license": "MIT",
   "repository": {
